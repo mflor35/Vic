@@ -1,5 +1,6 @@
 package com.vicmod;
 
+import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.vicmod.ai.VicAiService;
@@ -27,6 +28,9 @@ import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvents;
+import net.minecraft.text.ClickEvent;
+import net.minecraft.text.HoverEvent;
+import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.world.World;
@@ -200,13 +204,20 @@ public class VicMod implements ModInitializer {
                                 VicWorldState state = VicWorldState.getServerState(world.getServer());
                                 VicConfig cfg = VicConfig.get();
                                 int stage = state.computeStage(cfg.countdownDays);
+                                String provider = cfg.getEffectiveProvider();
+                                String activeModel = switch (provider) {
+                                    case "OLLAMA" -> cfg.ollamaModel + " @ " + cfg.ollamaUrl;
+                                    case "OPENAI" -> cfg.apiModel + " @ " + cfg.apiEndpoint;
+                                    default -> "Built-in Scripted Dialogue";
+                                };
                                 ctx.getSource().sendFeedback(() -> Text.literal(
                                         "=== Vic Mod Status ===\n" +
                                                 "Countdown Active: " + state.isCountdownActive() + "\n" +
                                                 "Day: " + state.getCurrentDay() + " / " + cfg.countdownDays + "\n" +
                                                 "Karma: " + state.getKarma() + " (Stage " + stage + ")\n" +
                                                 "Demon Awakened: " + state.isDemonAwakened() + "\n" +
-                                                "External AI Enabled: " + cfg.enableAiApi + " (" + cfg.apiModel + ")"
+                                                "AI Provider: " + provider + " (" + activeModel + ")\n" +
+                                                "Tip: Press [V] or run /vicconfig to open the in-game config menu!"
                                 ).formatted(Formatting.YELLOW), false);
                                 return 1;
                             }))
@@ -218,6 +229,117 @@ public class VicMod implements ModInitializer {
                                         VicAiService.handlePlayerMessage(player, msg);
                                         return 1;
                                     })))
+                    .then(CommandManager.literal("ollama")
+                            .then(CommandManager.literal("list")
+                                    .executes(ctx -> {
+                                        VicConfig cfg = VicConfig.get();
+                                        ctx.getSource().sendFeedback(() -> Text.literal("Scanning local Ollama models at " + cfg.ollamaUrl + "...").formatted(Formatting.YELLOW), false);
+                                        VicAiService.fetchOllamaModels(cfg.ollamaUrl).thenAccept(models -> {
+                                            ctx.getSource().getServer().execute(() -> {
+                                                if (models.isEmpty()) {
+                                                    ctx.getSource().sendFeedback(() -> Text.literal("No Ollama models found at " + cfg.ollamaUrl + ". Make sure 'ollama serve' is running!").formatted(Formatting.RED), false);
+                                                    return;
+                                                }
+                                                MutableText msg = Text.literal("=== Installed Ollama Models (click to use) ===\n").formatted(Formatting.AQUA, Formatting.BOLD);
+                                                for (String model : models) {
+                                                    boolean isCurrent = "OLLAMA".equals(cfg.getEffectiveProvider()) && model.equalsIgnoreCase(cfg.ollamaModel);
+                                                    MutableText entry = Text.literal((isCurrent ? " * " : " - ") + model + " ")
+                                                            .formatted(isCurrent ? Formatting.GREEN : Formatting.WHITE)
+                                                            .append(Text.literal("[Use Model]")
+                                                                    .formatted(Formatting.GOLD, Formatting.UNDERLINE)
+                                                                    .styled(s -> s
+                                                                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/vic ollama model " + model))
+                                                                            .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal("Switch Vic to Ollama model: " + model)))));
+                                                    msg.append(entry).append(Text.literal("\n"));
+                                                }
+                                                ctx.getSource().sendFeedback(() -> msg, false);
+                                            });
+                                        });
+                                        return 1;
+                                    }))
+                            .then(CommandManager.literal("url")
+                                    .then(CommandManager.argument("url", StringArgumentType.greedyString())
+                                            .executes(ctx -> {
+                                                String url = StringArgumentType.getString(ctx, "url").trim();
+                                                VicConfig cfg = VicConfig.get();
+                                                cfg.ollamaUrl = VicAiService.normalizeOllamaBaseUrl(url);
+                                                cfg.setProvider("OLLAMA");
+                                                VicConfig.save();
+                                                ctx.getSource().sendFeedback(() -> Text.literal("Ollama URL set to " + cfg.ollamaUrl + " (Ollama mode enabled)").formatted(Formatting.GREEN), false);
+                                                return 1;
+                                            })))
+                            .then(CommandManager.literal("model")
+                                    .then(CommandManager.argument("modelName", StringArgumentType.greedyString())
+                                            .executes(ctx -> {
+                                                String model = StringArgumentType.getString(ctx, "modelName").trim();
+                                                VicConfig cfg = VicConfig.get();
+                                                cfg.ollamaModel = model;
+                                                cfg.setProvider("OLLAMA");
+                                                VicConfig.save();
+                                                ctx.getSource().sendFeedback(() -> Text.literal("Vic is now using Ollama model: " + model + " (" + cfg.ollamaUrl + ")").formatted(Formatting.GREEN), false);
+                                                return 1;
+                                            })))
+                            .then(CommandManager.argument("modelName", StringArgumentType.greedyString())
+                                    .executes(ctx -> {
+                                        String model = StringArgumentType.getString(ctx, "modelName").trim();
+                                        VicConfig cfg = VicConfig.get();
+                                        cfg.ollamaModel = model;
+                                        cfg.setProvider("OLLAMA");
+                                        VicConfig.save();
+                                        ctx.getSource().sendFeedback(() -> Text.literal("Vic is now using Ollama model: " + model + " (" + cfg.ollamaUrl + ")").formatted(Formatting.GREEN), false);
+                                        return 1;
+                                    })))
+                    .then(CommandManager.literal("provider")
+                            .then(CommandManager.argument("mode", StringArgumentType.word())
+                                    .executes(ctx -> {
+                                        String mode = StringArgumentType.getString(ctx, "mode");
+                                        VicConfig cfg = VicConfig.get();
+                                        cfg.setProvider(mode);
+                                        VicConfig.save();
+                                        ctx.getSource().sendFeedback(() -> Text.literal("Vic AI provider switched to: " + cfg.getEffectiveProvider()).formatted(Formatting.GREEN), false);
+                                        return 1;
+                                    })))
+                    .then(CommandManager.literal("config")
+                            .then(CommandManager.literal("countdownDays")
+                                    .then(CommandManager.argument("days", IntegerArgumentType.integer(1, 30))
+                                            .executes(ctx -> {
+                                                int days = IntegerArgumentType.getInteger(ctx, "days");
+                                                VicConfig cfg = VicConfig.get();
+                                                cfg.countdownDays = days;
+                                                VicConfig.save();
+                                                ctx.getSource().sendFeedback(() -> Text.literal("Vic trial countdown length set to " + days + " days.").formatted(Formatting.GREEN), false);
+                                                return 1;
+                                            })))
+                            .then(CommandManager.literal("worldDecay")
+                                    .then(CommandManager.argument("enabled", BoolArgumentType.bool())
+                                            .executes(ctx -> {
+                                                boolean enabled = BoolArgumentType.getBool(ctx, "enabled");
+                                                VicConfig cfg = VicConfig.get();
+                                                cfg.enableWorldDecay = enabled;
+                                                VicConfig.save();
+                                                ctx.getSource().sendFeedback(() -> Text.literal("Vic World Decay set to " + enabled).formatted(Formatting.GREEN), false);
+                                                return 1;
+                                            })))
+                            .then(CommandManager.literal("trueDarkness")
+                                    .then(CommandManager.argument("enabled", BoolArgumentType.bool())
+                                            .executes(ctx -> {
+                                                boolean enabled = BoolArgumentType.getBool(ctx, "enabled");
+                                                VicConfig cfg = VicConfig.get();
+                                                cfg.enableTrueDarknessDuringNight = enabled;
+                                                VicConfig.save();
+                                                ctx.getSource().sendFeedback(() -> Text.literal("Vic Nighttime True Darkness set to " + enabled).formatted(Formatting.GREEN), false);
+                                                return 1;
+                                            })))
+                            .then(CommandManager.literal("autoSpawnBox")
+                                    .then(CommandManager.argument("enabled", BoolArgumentType.bool())
+                                            .executes(ctx -> {
+                                                boolean enabled = BoolArgumentType.getBool(ctx, "enabled");
+                                                VicConfig cfg = VicConfig.get();
+                                                cfg.autoSpawnDeliveryBoxOnFirstJoin = enabled;
+                                                VicConfig.save();
+                                                ctx.getSource().sendFeedback(() -> Text.literal("Vic Auto-Spawn Delivery Box set to " + enabled).formatted(Formatting.GREEN), false);
+                                                return 1;
+                                            }))))
                     .then(CommandManager.literal("setday")
                             .requires(src -> src.hasPermissionLevel(2))
                             .then(CommandManager.argument("day", IntegerArgumentType.integer(1, 30))
@@ -251,9 +373,9 @@ public class VicMod implements ModInitializer {
                                         String key = StringArgumentType.getString(ctx, "key").trim();
                                         VicConfig cfg = VicConfig.get();
                                         cfg.apiKey = key;
-                                        cfg.enableAiApi = !key.isEmpty();
+                                        cfg.setProvider(key.isEmpty() ? "SCRIPTED" : "OPENAI");
                                         VicConfig.save();
-                                        ctx.getSource().sendFeedback(() -> Text.literal("Vic AI API key updated and enabled! Endpoint: " + cfg.apiEndpoint).formatted(Formatting.GREEN), false);
+                                        ctx.getSource().sendFeedback(() -> Text.literal("Vic AI API key updated and OpenAI/Groq mode enabled! Endpoint: " + cfg.apiEndpoint).formatted(Formatting.GREEN), false);
                                         return 1;
                                     })))
             );

@@ -27,6 +27,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Random;
@@ -63,12 +64,156 @@ public class VicAiService {
         int stage = state.computeStage(config.countdownDays);
         vic.setCorruptionStage(stage);
 
-        if (config.enableAiApi && config.apiKey != null && !config.apiKey.isBlank()) {
+        String provider = config.getEffectiveProvider();
+        if ("OLLAMA".equals(provider)) {
+            queryOllamaLlm(player, vic, state, stage, rawMessage);
+        } else if ("OPENAI".equals(provider) && config.apiKey != null && !config.apiKey.isBlank()) {
             queryExternalLlm(player, vic, state, stage, rawMessage);
         } else {
             String response = generateScriptedResponse(player, vic, state, stage, rawMessage);
             processAndDeliverResponse(player, vic, state, stage, response);
         }
+    }
+
+    public static String normalizeOllamaBaseUrl(String rawUrl) {
+        String base = (rawUrl == null || rawUrl.isBlank()) ? "http://localhost:11434" : rawUrl.trim();
+        while (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        if (base.endsWith("/api/chat")) {
+            base = base.substring(0, base.length() - "/api/chat".length());
+        } else if (base.endsWith("/api/tags")) {
+            base = base.substring(0, base.length() - "/api/tags".length());
+        } else if (base.endsWith("/v1/chat/completions")) {
+            base = base.substring(0, base.length() - "/v1/chat/completions".length());
+        }
+        return base;
+    }
+
+    public static CompletableFuture<List<String>> fetchOllamaModels(String rawBaseUrl) {
+        String base = normalizeOllamaBaseUrl(rawBaseUrl);
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(base + "/api/tags"))
+                    .timeout(Duration.ofSeconds(5))
+                    .header("Accept", "application/json")
+                    .GET()
+                    .build();
+
+            return HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                    .thenApply(response -> {
+                        List<String> models = new ArrayList<>();
+                        if (response != null && response.statusCode() == 200 && response.body() != null) {
+                            JsonObject root = JsonParser.parseString(response.body()).getAsJsonObject();
+                            JsonArray arr = root.getAsJsonArray("models");
+                            if (arr != null) {
+                                for (JsonElement el : arr) {
+                                    if (el.isJsonObject() && el.getAsJsonObject().has("name")) {
+                                        models.add(el.getAsJsonObject().get("name").getAsString());
+                                    }
+                                }
+                            }
+                        }
+                        return models;
+                    })
+                    .exceptionally(err -> List.of());
+        } catch (Exception e) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+    }
+
+    private static void queryOllamaLlm(ServerPlayerEntity player, VicEntity vic, VicWorldState state, int stage, String userMessage) {
+        VicConfig config = VicConfig.get();
+        String systemPrompt = buildSystemPrompt(player, state, stage, config.countdownDays);
+        String base = normalizeOllamaBaseUrl(config.ollamaUrl);
+        String model = (config.ollamaModel == null || config.ollamaModel.isBlank()) ? "llama3.2" : config.ollamaModel.trim();
+
+        JsonObject payload = new JsonObject();
+        payload.addProperty("model", model);
+        payload.addProperty("stream", false);
+
+        JsonObject options = new JsonObject();
+        options.addProperty("temperature", 0.8);
+        options.addProperty("num_predict", 180);
+        payload.add("options", options);
+
+        JsonArray messages = new JsonArray();
+        JsonObject sysMsg = new JsonObject();
+        sysMsg.addProperty("role", "system");
+        sysMsg.addProperty("content", systemPrompt);
+        messages.add(sysMsg);
+
+        JsonObject usrMsg = new JsonObject();
+        usrMsg.addProperty("role", "user");
+        usrMsg.addProperty("content", userMessage);
+        messages.add(usrMsg);
+
+        payload.add("messages", messages);
+
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(base + "/api/chat"))
+                    .timeout(Duration.ofSeconds(Math.max(5, config.requestTimeoutSeconds)))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
+                    .build();
+
+            CompletableFuture<HttpResponse<String>> future = HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofString());
+            future.whenComplete((response, error) -> {
+                player.getServer().execute(() -> {
+                    if (error != null || response == null || response.statusCode() >= 400) {
+                        VicMod.LOGGER.warn("Ollama request failed (status={}, error={}), falling back to scripted response",
+                                response != null ? response.statusCode() : "N/A",
+                                error != null ? error.getMessage() : "none");
+                        String fallback = generateScriptedResponse(player, vic, state, stage, userMessage);
+                        processAndDeliverResponse(player, vic, state, stage, fallback);
+                        return;
+                    }
+                    try {
+                        JsonObject root = JsonParser.parseString(response.body()).getAsJsonObject();
+                        if (root.has("message") && root.get("message").isJsonObject()) {
+                            JsonElement contentEl = root.getAsJsonObject("message").get("content");
+                            if (contentEl != null && !contentEl.isJsonNull()) {
+                                String reply = stripThinkBlocks(contentEl.getAsString()).trim();
+                                if (!reply.isEmpty()) {
+                                    processAndDeliverResponse(player, vic, state, stage, reply);
+                                    return;
+                                }
+                            }
+                        }
+                        // Fallback if user pointed at an OpenAI-compatible endpoint
+                        if (root.has("choices") && root.get("choices").isJsonArray()) {
+                            JsonArray choices = root.getAsJsonArray("choices");
+                            if (!choices.isEmpty()) {
+                                JsonElement contentEl = choices.get(0).getAsJsonObject()
+                                        .getAsJsonObject("message")
+                                        .get("content");
+                                if (contentEl != null && !contentEl.isJsonNull()) {
+                                    String reply = stripThinkBlocks(contentEl.getAsString()).trim();
+                                    if (!reply.isEmpty()) {
+                                        processAndDeliverResponse(player, vic, state, stage, reply);
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        VicMod.LOGGER.warn("Failed to parse Ollama response, falling back to scripted engine", e);
+                    }
+                    String fallback = generateScriptedResponse(player, vic, state, stage, userMessage);
+                    processAndDeliverResponse(player, vic, state, stage, fallback);
+                });
+            });
+        } catch (Exception e) {
+            String fallback = generateScriptedResponse(player, vic, state, stage, userMessage);
+            processAndDeliverResponse(player, vic, state, stage, fallback);
+        }
+    }
+
+    private static String stripThinkBlocks(String text) {
+        if (text == null) return "";
+        // Strip <think>...</think> blocks produced by reasoning models (e.g. deepseek-r1, qwq)
+        return text.replaceAll("(?s)<think>.*?</think>", "").trim();
     }
 
     public static int evaluateMessageTone(String msg) {
@@ -111,15 +256,17 @@ public class VicAiService {
         payload.add("messages", messages);
 
         try {
-            HttpRequest request = HttpRequest.newBuilder()
+            HttpRequest.Builder reqBuilder = HttpRequest.newBuilder()
                     .uri(URI.create(config.apiEndpoint))
                     .timeout(Duration.ofSeconds(Math.max(4, config.requestTimeoutSeconds)))
                     .header("Content-Type", "application/json")
-                    .header("Authorization", "Bearer " + config.apiKey.trim())
-                    .POST(HttpRequest.BodyPublishers.ofString(payload.toString()))
-                    .build();
+                    .POST(HttpRequest.BodyPublishers.ofString(payload.toString()));
 
-            CompletableFuture<HttpResponse<String>> future = HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofString());
+            if (config.apiKey != null && !config.apiKey.isBlank()) {
+                reqBuilder.header("Authorization", "Bearer " + config.apiKey.trim());
+            }
+
+            CompletableFuture<HttpResponse<String>> future = HTTP_CLIENT.sendAsync(reqBuilder.build(), HttpResponse.BodyHandlers.ofString());
             future.whenComplete((response, error) -> {
                 player.getServer().execute(() -> {
                     if (error != null || response == null || response.statusCode() >= 400) {
@@ -135,7 +282,7 @@ public class VicAiService {
                                     .getAsJsonObject("message")
                                     .get("content");
                             if (contentEl != null && !contentEl.isJsonNull()) {
-                                processAndDeliverResponse(player, vic, state, stage, contentEl.getAsString().trim());
+                                processAndDeliverResponse(player, vic, state, stage, stripThinkBlocks(contentEl.getAsString()).trim());
                                 return;
                             }
                         }

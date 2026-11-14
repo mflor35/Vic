@@ -32,6 +32,29 @@ Once finished, copy `build/libs/vic-1.0.0.jar` into your Minecraft 1.21.1 Fabric
 
 ---
 
+## In-Game Configuration & Ollama Support
+
+### 1. Open the In-Game Config Menu
+While in-game, you can open the **Vic Mod Configuration GUI** at any time by:
+- Pressing **`V`** (customizable under **Options -> Controls -> Key Binds -> Vic Mod**).
+- Running **`/vicconfig`** in chat.
+
+From the GUI you can:
+- Switch **AI Mode** between:
+  - **Built-in Offline Scripted** (no external AI server required)
+  - **Ollama (Local LLM)** (connects to your local Ollama server, default `http://localhost:11434`)
+  - **Remote API (OpenAI / Groq)** (connects to any OpenAI-compatible `/v1/chat/completions` endpoint)
+- Click **Models** in Ollama mode to automatically scan `http://localhost:11434/api/tags` and cycle through all models installed on your machine.
+- Toggle **Trial Length (Days)**, **Auto-Spawn Box**, **World Decay**, and **Night Darkness**.
+
+### 2. Ollama Chat Commands
+You can also manage Ollama models directly from chat:
+- `/vic ollama list` — Scans your local Ollama instance and lists all installed models with clickable **`[Use Model]`** buttons in chat.
+- `/vic ollama <model>` — Switches to Ollama mode and selects `<model>` (e.g. `/vic ollama llama3.2` or `/vic ollama mistral`).
+- `/vic ollama url <url>` — Changes the Ollama server URL (default `http://localhost:11434`).
+
+---
+
 ## How to Test Features In-Game
 
 Create a new Singleplayer world with **Allow Commands (Cheats) ON**:
@@ -43,22 +66,20 @@ Create a new Singleplayer world with **Allow Commands (Cheats) ON**:
 ### 2. Talking to Vic & Karma System
 - Send a message in standard game chat or run `/vic say <message>` while near Vic.
 - Friendly conversation increases your **Karma**; rude messages or attacking Vic decreases Karma and escalates hostility stages faster.
-- **Optional External AI (OpenAI-compatible API)**:
-  - By default, Vic uses built-in stage-aware offline dialogue so it works out of the box.
-  - To enable live LLM responses, run:
-    ```text
-    /vic apikey <YOUR_API_KEY>
-    ```
-  - You can also customize the endpoint (`apiEndpoint`), model (`apiModel`), and gameplay toggles in `config/vic.json` (or `run/config/vic.json` in dev).
 
-### 3. Commands (`/vic`)
-- `/vic status` — View current countdown status, Day (`1`–`5`), Karma (`-100` to `100`), Stage (`1`–`4`), Demon status, and AI config.
+### 3. Commands (`/vic` & `/vicconfig`)
+- `/vicconfig` *(or press `V`)* — Open the in-game Vic Configuration GUI.
+- `/vic status` — View current countdown status, Day (`1`–`5`), Karma (`-100` to `100`), Stage (`1`–`4`), Demon status, and active AI model.
 - `/vic say <message>` — Send a message directly to Vic.
+- `/vic ollama list` — List locally installed Ollama models with clickable selection buttons.
+- `/vic ollama <model>` — Use a specific local Ollama model.
+- `/vic provider <scripted|ollama|openai>` — Switch the AI backend.
+- `/vic config <countdownDays|worldDecay|trueDarkness|autoSpawnBox> <value>` — Update gameplay settings via command.
 - `/vic setkarma <value>` *(OP level 2)* — Set Karma between `-100` and `100` to test different behavioral stages.
 - `/vic setday <day>` *(OP level 2)* — Jump to a specific day (`1`–`30`):
   - `/vic setday 3` — Test Stage 2+ world decay (wildlife vanishing, stalking behavior, and true darkness at night).
   - `/vic setday 6` — Immediately expire the 5-day trial and trigger the **Vic Demon** (`vic:vic_demon`) awakening.
-- `/vic apikey <key>` — Save and enable an API key for live AI chat responses.
+- `/vic apikey <key>` — Save and enable an API key for OpenAI/Groq chat responses.
 
 ### 4. Items & Entities
 - **Creative Inventory**:
