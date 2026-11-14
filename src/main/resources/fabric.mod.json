@@ -1,0 +1,37 @@
+{
+	"schemaVersion": 1,
+	"id": "vic",
+	"version": "${version}",
+	"name": "Vic",
+	"description": "An AI-powered companion and slow-burn psychological horror mod inspired by Verity. Meet Vic: your cheerful virtual assistant inside a mysterious delivery box.",
+	"authors": [
+		"VicMod"
+	],
+	"contact": {
+		"homepage": "https://example.com/vic"
+	},
+	"license": "MIT",
+	"icon": "assets/vic/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.vicmod.VicMod"
+		],
+		"client": [
+			"com.vicmod.client.VicModClient"
+		]
+	},
+	"mixins": [
+		"vic.mixins.json",
+		{
+			"config": "vic.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.16.0",
+		"minecraft": "~1.21.1",
+		"java": ">=21",
+		"fabric-api": "*"
+	}
+}

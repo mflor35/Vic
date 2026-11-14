@@ -1,0 +1,25 @@
+# Gradle
+/.gradle/
+/build/
+/out/
+
+# Fabric Loom / Minecraft dev run directory
+/run/
+
+# Local config with potential API keys
+/config/
+
+# IDE files
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.project
+.classpath
+.settings/
+bin/
+
+# OS files
+.DS_Store
+Thumbs.db
