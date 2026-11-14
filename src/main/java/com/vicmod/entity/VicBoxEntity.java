@@ -2,7 +2,7 @@ package com.vicmod.entity;
 
 import com.vicmod.registry.ModEntities;
 import com.vicmod.state.VicWorldState;
-import com.vicmod.voice.VicTtsService;
+import com.vicmod.network.VicSpeechPayload;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.attribute.DefaultAttributeContainer;
 import net.minecraft.entity.attribute.EntityAttributes;
@@ -12,6 +12,7 @@ import net.minecraft.entity.data.TrackedData;
 import net.minecraft.entity.data.TrackedDataHandlerRegistry;
 import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.server.world.ServerWorld;
@@ -127,7 +128,9 @@ public class VicBoxEntity extends MobEntity {
                                 .append(Text.literal(greeting).formatted(Formatting.WHITE)),
                         false
                 );
-                VicTtsService.speak(greeting, 0);
+                if (nearest instanceof ServerPlayerEntity serverPlayer) {
+                    VicSpeechPayload.sendTo(serverPlayer, greeting, 0);
+                }
             }
             serverWorld.spawnEntity(vic);
         }

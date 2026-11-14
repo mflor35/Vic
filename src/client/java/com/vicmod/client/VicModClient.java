@@ -10,13 +10,16 @@ import com.vicmod.client.render.VicBoxEntityRenderer;
 import com.vicmod.client.render.VicDemonEntityRenderer;
 import com.vicmod.client.render.VicEntityRenderer;
 import com.vicmod.config.VicConfig;
+import com.vicmod.network.VicSpeechPayload;
 import com.vicmod.registry.ModEntities;
 import com.vicmod.voice.VicVoiceInputService;
+import com.vicmod.voice.VicTtsService;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.rendering.v1.EntityModelLayerRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
 import net.minecraft.client.MinecraftClient;
@@ -89,6 +92,9 @@ public class VicModClient implements ClientModInitializer {
                                 return 1;
                             })));
         });
+
+        ClientPlayNetworking.registerGlobalReceiver(VicSpeechPayload.ID, (payload, context) ->
+            VicTtsService.speak(payload.text(), payload.stage()));
     }
 
     private void handlePushToTalkTick(MinecraftClient client) {

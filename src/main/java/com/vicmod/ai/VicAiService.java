@@ -7,6 +7,7 @@ import com.google.gson.JsonParser;
 import com.vicmod.VicMod;
 import com.vicmod.config.VicConfig;
 import com.vicmod.entity.VicEntity;
+import com.vicmod.network.VicSpeechPayload;
 import com.vicmod.state.VicWorldState;
 import com.vicmod.voice.VicTtsService;
 import net.minecraft.block.BlockState;
@@ -595,8 +596,7 @@ public class VicAiService {
         };
         world.playSound(null, vic.getBlockPos(), SoundEvents.BLOCK_NOTE_BLOCK_BIT.value(), SoundCategory.NEUTRAL, 0.9f, pitch);
 
-        // Speak response out loud via Text-to-Speech
-        VicTtsService.speak(cleanText, stage);
+        VicSpeechPayload.sendTo(player, cleanText, stage);
 
         if (actionTag != null) {
             executeActionTag(player, vic, world, actionTag);

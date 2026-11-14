@@ -9,10 +9,10 @@ import com.vicmod.entity.VicBoxEntity;
 import com.vicmod.entity.VicDemonEntity;
 import com.vicmod.entity.VicEntity;
 import com.vicmod.item.FlashlightItem;
+import com.vicmod.network.VicSpeechPayload;
 import com.vicmod.registry.ModEntities;
 import com.vicmod.registry.ModItems;
 import com.vicmod.state.VicWorldState;
-import com.vicmod.voice.VicTtsService;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
@@ -50,6 +50,7 @@ public class VicMod implements ModInitializer {
     @Override
     public void onInitialize() {
         VicConfig.load();
+        VicSpeechPayload.register();
         VicAiService.ensureLocalOllamaReady();
         ModEntities.register();
         ModItems.register();
@@ -199,13 +200,14 @@ public class VicMod implements ModInitializer {
 
     public static void awakenVicDemon(MinecraftServer server, ServerWorld overworld, VicWorldState state) {
         state.setDemonAwakened(true);
-        VicTtsService.speak("TRIAL PERIOD EXPIRED. THANK YOU FOR USING VIC. DO NOT HIDE ON THE SURFACE.", 3);
+        String speech = "TRIAL PERIOD EXPIRED. THANK YOU FOR USING VIC. DO NOT HIDE ON THE SURFACE.";
 
         List<ServerPlayerEntity> players = server.getPlayerManager().getPlayerList();
         for (ServerPlayerEntity player : players) {
+            VicSpeechPayload.sendTo(player, speech, 3);
             player.sendMessage(
                     Text.literal("<Vic> ").formatted(Formatting.DARK_RED, Formatting.BOLD)
-                            .append(Text.literal("TRIAL PERIOD EXPIRED. THANK YOU FOR USING VIC. DO NOT HIDE ON THE SURFACE.").formatted(Formatting.RED)),
+                            .append(Text.literal(speech).formatted(Formatting.RED)),
                     false
             );
             overworld.playSound(null, player.getBlockPos(), SoundEvents.ENTITY_WARDEN_SONIC_BOOM, SoundCategory.HOSTILE, 1.5f, 0.5f);
@@ -269,7 +271,10 @@ public class VicMod implements ModInitializer {
                                         ServerWorld world = ctx.getSource().getWorld();
                                         VicWorldState state = VicWorldState.getServerState(world.getServer());
                                         int stage = state.computeStage(VicConfig.get().countdownDays);
-                                        VicTtsService.speak("Hello friend! My voice synthesizer is online and calibrated!", stage);
+                                        ServerPlayerEntity player = ctx.getSource().getPlayer();
+                                        if (player != null) {
+                                            VicSpeechPayload.sendTo(player, "Hello friend! My voice synthesizer is online and calibrated!", stage);
+                                        }
                                         ctx.getSource().sendFeedback(() -> Text.literal("Playing Vic TTS test (Stage " + stage + ", Mode=" + VicConfig.get().getEffectiveTtsMode() + ")").formatted(Formatting.AQUA), false);
                                         return 1;
                                     })
@@ -282,7 +287,10 @@ public class VicMod implements ModInitializer {
                                                     case 2 -> "Where did all the animals go? Time is almost up.";
                                                     default -> "The shell is too tight. Do not hide on the surface.";
                                                 };
-                                                VicTtsService.speak(sample, stage);
+                                                ServerPlayerEntity player = ctx.getSource().getPlayer();
+                                                if (player != null) {
+                                                    VicSpeechPayload.sendTo(player, sample, stage);
+                                                }
                                                 ctx.getSource().sendFeedback(() -> Text.literal("Playing Vic TTS test for Stage " + stage).formatted(Formatting.AQUA), false);
                                                 return 1;
                                             })))
