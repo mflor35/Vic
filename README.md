@@ -53,6 +53,16 @@ You can also manage Ollama models directly from chat:
 - `/vic ollama <model>` — Switches to Ollama mode and selects `<model>` (e.g. `/vic ollama llama3.2` or `/vic ollama mistral`).
 - `/vic ollama url <url>` — Changes the Ollama server URL (default `http://localhost:11434`).
 
+### 3. Text-to-Speech (TTS) & Microphone Voice Input
+- **Text-to-Speech (TTS)**:
+  - Enabled out of the box! Whenever Vic replies, unboxes, or awakens, he speaks his dialogue out loud with stage-aware pitch and corruption effects (bright and cheerful in Stage 0 -> uncanny in Stage 1 -> glitching in Stage 2 -> deep demonic distortion in Stage 3).
+  - Supports **Built-in Formant Synth (`SYNTH`)** (zero external dependencies), **System TTS (`SYSTEM`)** (`espeak-ng`, `espeak`, `spd-say`, macOS `say`, Windows SAPI), and **Remote API TTS (`OPENAI_TTS`)** (`/v1/audio/speech`).
+  - Test or change TTS in the **`V`** Config Menu (click **`Test`** to cycle stages) or via `/vic tts test [0-3]` and `/vic tts <auto|synth|system|openai_tts|off>`.
+- **Microphone Voice Input (Push-to-Talk)**:
+  - **Hold `R`** in-game to record your voice and release **`R`** to transcribe and send your message directly to Vic (rebindable under *Options -> Controls -> Key Binds -> Vic Mod*).
+  - Or run `/vic listen [seconds]` in chat to record for a fixed duration.
+  - Supports **Whisper API (`WHISPER_API`)** (Groq `whisper-large-v3-turbo`, OpenAI, or local Whisper HTTP servers) and **Local CLI (`LOCAL_CLI`)** (`faster-whisper`, `whisper-cli`, `vosk-transcriber`, or Python `speech_recognition`).
+
 ---
 
 ## How to Test Features In-Game

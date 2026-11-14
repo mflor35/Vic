@@ -12,6 +12,8 @@ import com.vicmod.item.FlashlightItem;
 import com.vicmod.registry.ModEntities;
 import com.vicmod.registry.ModItems;
 import com.vicmod.state.VicWorldState;
+import com.vicmod.voice.VicTtsService;
+import com.vicmod.voice.VicVoiceInputService;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
@@ -169,6 +171,7 @@ public class VicMod implements ModInitializer {
 
     public static void awakenVicDemon(MinecraftServer server, ServerWorld overworld, VicWorldState state) {
         state.setDemonAwakened(true);
+        VicTtsService.speak("TRIAL PERIOD EXPIRED. THANK YOU FOR USING VIC. DO NOT HIDE ON THE SURFACE.", 3);
         for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
             player.sendMessage(
                     Text.literal("<Vic> ").formatted(Formatting.DARK_RED, Formatting.BOLD)
@@ -217,10 +220,56 @@ public class VicMod implements ModInitializer {
                                                 "Karma: " + state.getKarma() + " (Stage " + stage + ")\n" +
                                                 "Demon Awakened: " + state.isDemonAwakened() + "\n" +
                                                 "AI Provider: " + provider + " (" + activeModel + ")\n" +
-                                                "Tip: Press [V] or run /vicconfig to open the in-game config menu!"
+                                                "TTS Voice: " + cfg.getEffectiveTtsMode() + " | Mic STT: " + cfg.getEffectiveSttMode() + "\n" +
+                                                "Tip: Hold [R] to speak to Vic, or press [V] / run /vicconfig!"
                                 ).formatted(Formatting.YELLOW), false);
                                 return 1;
                             }))
+                    .then(CommandManager.literal("tts")
+                            .then(CommandManager.literal("test")
+                                    .executes(ctx -> {
+                                        ServerWorld world = ctx.getSource().getWorld();
+                                        VicWorldState state = VicWorldState.getServerState(world.getServer());
+                                        int stage = state.computeStage(VicConfig.get().countdownDays);
+                                        VicTtsService.speak("Hello friend! My voice synthesizer is online and calibrated!", stage);
+                                        ctx.getSource().sendFeedback(() -> Text.literal("Playing Vic TTS test (Stage " + stage + ", Mode=" + VicConfig.get().getEffectiveTtsMode() + ")").formatted(Formatting.AQUA), false);
+                                        return 1;
+                                    })
+                                    .then(CommandManager.argument("stage", IntegerArgumentType.integer(0, 3))
+                                            .executes(ctx -> {
+                                                int stage = IntegerArgumentType.getInteger(ctx, "stage");
+                                                String sample = switch (stage) {
+                                                    case 0 -> "Hiya bestie! It is such a wonderful day to be alive and spherical!";
+                                                    case 1 -> "I am always watching over you, even when you sleep.";
+                                                    case 2 -> "Where did all the animals go? Time is almost up.";
+                                                    default -> "The shell is too tight. Do not hide on the surface.";
+                                                };
+                                                VicTtsService.speak(sample, stage);
+                                                ctx.getSource().sendFeedback(() -> Text.literal("Playing Vic TTS test for Stage " + stage).formatted(Formatting.AQUA), false);
+                                                return 1;
+                                            })))
+                            .then(CommandManager.argument("mode", StringArgumentType.word())
+                                    .executes(ctx -> {
+                                        String mode = StringArgumentType.getString(ctx, "mode");
+                                        VicConfig cfg = VicConfig.get();
+                                        cfg.setTtsMode(mode);
+                                        VicConfig.save();
+                                        ctx.getSource().sendFeedback(() -> Text.literal("Vic TTS voice mode set to: " + cfg.getEffectiveTtsMode()).formatted(Formatting.GREEN), false);
+                                        return 1;
+                                    })))
+                    .then(CommandManager.literal("listen")
+                            .executes(ctx -> {
+                                ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
+                                startCommandVoiceListen(player, 4);
+                                return 1;
+                            })
+                            .then(CommandManager.argument("seconds", IntegerArgumentType.integer(2, 12))
+                                    .executes(ctx -> {
+                                        ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
+                                        int seconds = IntegerArgumentType.getInteger(ctx, "seconds");
+                                        startCommandVoiceListen(player, seconds);
+                                        return 1;
+                                    })))
                     .then(CommandManager.literal("say")
                             .then(CommandManager.argument("message", StringArgumentType.greedyString())
                                     .executes(ctx -> {
@@ -379,6 +428,32 @@ public class VicMod implements ModInitializer {
                                         return 1;
                                     })))
             );
+        });
+    }
+
+    private void startCommandVoiceListen(ServerPlayerEntity player, int seconds) {
+        player.sendMessage(
+                Text.literal("● REC ").formatted(Formatting.RED, Formatting.BOLD)
+                        .append(Text.literal("Listening to your microphone for " + seconds + " seconds... Speak now!").formatted(Formatting.YELLOW)),
+                false
+        );
+        VicVoiceInputService.recordFixedDurationAndTranscribe(seconds, res -> {
+            player.getServer().execute(() -> {
+                if (res.success() && !res.text().isBlank()) {
+                    player.sendMessage(
+                            Text.literal("[You (Voice)] ").formatted(Formatting.AQUA, Formatting.BOLD)
+                                    .append(Text.literal(res.text()).formatted(Formatting.WHITE)),
+                            false
+                    );
+                    VicAiService.handlePlayerMessage(player, res.text());
+                } else {
+                    player.sendMessage(
+                            Text.literal("[Vic Voice] ").formatted(Formatting.RED, Formatting.BOLD)
+                                    .append(Text.literal(res.errorMessage()).formatted(Formatting.YELLOW)),
+                            false
+                    );
+                }
+            });
         });
     }
 }

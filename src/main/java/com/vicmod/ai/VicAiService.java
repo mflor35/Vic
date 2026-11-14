@@ -8,6 +8,7 @@ import com.vicmod.VicMod;
 import com.vicmod.config.VicConfig;
 import com.vicmod.entity.VicEntity;
 import com.vicmod.state.VicWorldState;
+import com.vicmod.voice.VicTtsService;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.entity.ItemEntity;
@@ -464,6 +465,9 @@ public class VicAiService {
             default -> 0.5f;
         };
         world.playSound(null, vic.getBlockPos(), SoundEvents.BLOCK_NOTE_BLOCK_BIT.value(), SoundCategory.NEUTRAL, 0.9f, pitch);
+
+        // Speak response out loud via Text-to-Speech
+        VicTtsService.speak(cleanText, stage);
 
         if (actionTag != null) {
             executeActionTag(player, vic, world, actionTag);

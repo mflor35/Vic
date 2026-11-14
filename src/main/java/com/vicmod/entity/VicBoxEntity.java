@@ -2,6 +2,7 @@ package com.vicmod.entity;
 
 import com.vicmod.registry.ModEntities;
 import com.vicmod.state.VicWorldState;
+import com.vicmod.voice.VicTtsService;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.attribute.DefaultAttributeContainer;
 import net.minecraft.entity.attribute.EntityAttributes;
@@ -101,11 +102,13 @@ public class VicBoxEntity extends MobEntity {
             PlayerEntity nearest = serverWorld.getClosestPlayer(this, 32.0);
             if (nearest != null) {
                 vic.setOwnerUuid(nearest.getUuid());
+                String greeting = "Hiya bestie! I'm Vic, your brand-new spherical virtual assistant! Just type in chat or hold R to talk to me!";
                 nearest.sendMessage(
                         Text.literal("<Vic> ").formatted(Formatting.YELLOW, Formatting.BOLD)
-                                .append(Text.literal("Hiya bestie!! I'm Vic, your brand-new spherical virtual assistant! Just type in chat if you need food, torches, iron, or radar scans!").formatted(Formatting.WHITE)),
+                                .append(Text.literal(greeting).formatted(Formatting.WHITE)),
                         false
                 );
+                VicTtsService.speak(greeting, 0);
             }
             serverWorld.spawnEntity(vic);
         }

@@ -2,6 +2,8 @@ package com.vicmod.client.gui;
 
 import com.vicmod.ai.VicAiService;
 import com.vicmod.config.VicConfig;
+import com.vicmod.voice.VicTtsService;
+import com.vicmod.voice.VicVoiceInputService;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -17,6 +19,8 @@ public class VicConfigScreen extends Screen {
     private final Screen parent;
 
     private String aiProvider;
+    private String ttsMode;
+    private String sttMode;
     private int countdownDays;
     private boolean autoSpawnBox;
     private boolean enableWorldDecay;
@@ -32,6 +36,11 @@ public class VicConfigScreen extends Screen {
     private TextFieldWidget apiKeyField;
 
     private ButtonWidget providerButton;
+    private ButtonWidget ttsModeButton;
+    private ButtonWidget testTtsButton;
+    private ButtonWidget sttModeButton;
+    private ButtonWidget testMicButton;
+
     private ButtonWidget daysButton;
     private ButtonWidget autoSpawnButton;
     private ButtonWidget worldDecayButton;
@@ -39,6 +48,7 @@ public class VicConfigScreen extends Screen {
 
     private final List<String> detectedOllamaModels = new ArrayList<>();
     private int detectedModelIndex = -1;
+    private int testTtsStage = 0;
     private String statusText = "";
     private int statusColor = 0xAAAAAA;
 
@@ -48,6 +58,8 @@ public class VicConfigScreen extends Screen {
 
         VicConfig cfg = VicConfig.get();
         this.aiProvider = cfg.getEffectiveProvider();
+        this.ttsMode = cfg.getEffectiveTtsMode();
+        this.sttMode = cfg.getEffectiveSttMode();
         this.countdownDays = cfg.countdownDays;
         this.autoSpawnBox = cfg.autoSpawnDeliveryBoxOnFirstJoin;
         this.enableWorldDecay = cfg.enableWorldDecay;
@@ -61,7 +73,7 @@ public class VicConfigScreen extends Screen {
         int centerX = this.width / 2;
         int leftColX = centerX - 155;
         int rightColX = centerX + 5;
-        int y = 32;
+        int y = 26;
 
         // 1. AI Provider Cycle Button
         this.providerButton = ButtonWidget.builder(getProviderButtonText(), btn -> {
@@ -78,7 +90,7 @@ public class VicConfigScreen extends Screen {
         }).dimensions(leftColX, y, 310, 20).build();
         this.addDrawableChild(this.providerButton);
 
-        y += 28;
+        y += 24;
 
         // 2. Ollama Fields
         this.ollamaUrlField = new TextFieldWidget(this.textRenderer, leftColX, y + 10, 150, 20, Text.literal("Ollama URL"));
@@ -96,7 +108,7 @@ public class VicConfigScreen extends Screen {
         }).dimensions(rightColX + 100, y + 10, 50, 20).build();
         this.addDrawableChild(this.scanOllamaButton);
 
-        // 3. OpenAI / Groq Fields (same vertical slot, shown when provider == OPENAI)
+        // 3. OpenAI / Groq Fields
         this.apiEndpointField = new TextFieldWidget(this.textRenderer, leftColX, y + 10, 150, 20, Text.literal("API Endpoint"));
         this.apiEndpointField.setMaxLength(256);
         this.apiEndpointField.setText(cfg.apiEndpoint != null ? cfg.apiEndpoint : "");
@@ -107,16 +119,76 @@ public class VicConfigScreen extends Screen {
         this.apiModelField.setText(cfg.apiModel != null ? cfg.apiModel : "");
         this.addDrawableChild(this.apiModelField);
 
-        y += 38;
+        y += 34;
 
-        this.apiKeyField = new TextFieldWidget(this.textRenderer, leftColX, y + 10, 310, 20, Text.literal("API Key"));
+        // API Key field (always visible or visible for OpenAI / Whisper STT)
+        this.apiKeyField = new TextFieldWidget(this.textRenderer, leftColX, y + 10, 310, 20, Text.literal("API Key (Groq / OpenAI / Whisper STT)"));
         this.apiKeyField.setMaxLength(256);
         this.apiKeyField.setText(cfg.apiKey != null ? cfg.apiKey : "");
         this.addDrawableChild(this.apiKeyField);
 
         y += 36;
 
-        // 4. Gameplay Toggles (2 columns)
+        // 4. Text-to-Speech (TTS) & Voice Input (STT) Controls
+        this.ttsModeButton = ButtonWidget.builder(getTtsModeText(), btn -> {
+            this.ttsMode = switch (this.ttsMode) {
+                case "AUTO" -> "SYNTH";
+                case "SYNTH" -> "SYSTEM";
+                case "SYSTEM" -> "OPENAI_TTS";
+                case "OPENAI_TTS" -> "OFF";
+                default -> "AUTO";
+            };
+            btn.setMessage(getTtsModeText());
+        }).dimensions(leftColX, y, 108, 20).build();
+        this.addDrawableChild(this.ttsModeButton);
+
+        this.testTtsButton = ButtonWidget.builder(Text.literal("Test").formatted(Formatting.YELLOW), btn -> {
+            applyTransientVoiceConfig();
+            String sample = switch (this.testTtsStage) {
+                case 0 -> "Hiya bestie! I am Vic, your cheerful companion!";
+                case 1 -> "I am always watching over you, even while you sleep.";
+                case 2 -> "All the animals are gone. Time is running out.";
+                default -> "The shell is too tight. Do not hide on the surface.";
+            };
+            this.statusText = "Playing TTS Preview (Stage " + this.testTtsStage + ")...";
+            this.statusColor = 0x55FFFF;
+            VicTtsService.speak(sample, this.testTtsStage);
+            this.testTtsStage = (this.testTtsStage + 1) % 4;
+        }).dimensions(leftColX + 112, y, 38, 20).build();
+        this.addDrawableChild(this.testTtsButton);
+
+        this.sttModeButton = ButtonWidget.builder(getSttModeText(), btn -> {
+            this.sttMode = switch (this.sttMode) {
+                case "AUTO" -> "WHISPER_API";
+                case "WHISPER_API" -> "LOCAL_CLI";
+                case "LOCAL_CLI" -> "OFF";
+                default -> "AUTO";
+            };
+            btn.setMessage(getSttModeText());
+        }).dimensions(rightColX, y, 108, 20).build();
+        this.addDrawableChild(this.sttModeButton);
+
+        this.testMicButton = ButtonWidget.builder(Text.literal("Mic").formatted(Formatting.AQUA), btn -> {
+            applyTransientVoiceConfig();
+            this.statusText = "Recording mic for 3 seconds... Speak now!";
+            this.statusColor = 0xFF5555;
+            VicVoiceInputService.recordFixedDurationAndTranscribe(3, res -> {
+                MinecraftClient.getInstance().execute(() -> {
+                    if (res.success()) {
+                        this.statusText = "Heard: \"" + res.text() + "\"";
+                        this.statusColor = 0x55FF55;
+                    } else {
+                        this.statusText = res.errorMessage();
+                        this.statusColor = 0xFFAA00;
+                    }
+                });
+            });
+        }).dimensions(rightColX + 112, y, 38, 20).build();
+        this.addDrawableChild(this.testMicButton);
+
+        y += 24;
+
+        // 5. Gameplay Toggles (2 columns)
         this.daysButton = ButtonWidget.builder(getDaysButtonText(), btn -> {
             this.countdownDays = (this.countdownDays % 15) + 1;
             btn.setMessage(getDaysButtonText());
@@ -143,8 +215,8 @@ public class VicConfigScreen extends Screen {
         }).dimensions(rightColX, y, 150, 20).build();
         this.addDrawableChild(this.trueDarknessButton);
 
-        // 5. Save & Cancel Buttons
-        int bottomY = this.height - 28;
+        // 6. Save & Cancel Buttons
+        int bottomY = this.height - 26;
         this.addDrawableChild(ButtonWidget.builder(Text.literal("Save & Close").formatted(Formatting.GREEN), btn -> {
             saveChanges();
             this.close();
@@ -170,7 +242,14 @@ public class VicConfigScreen extends Screen {
 
         this.apiEndpointField.setVisible(isOpenAi);
         this.apiModelField.setVisible(isOpenAi);
-        this.apiKeyField.setVisible(isOpenAi);
+        this.apiKeyField.setVisible(true);
+    }
+
+    private void applyTransientVoiceConfig() {
+        VicConfig cfg = VicConfig.get();
+        cfg.setTtsMode(this.ttsMode);
+        cfg.setSttMode(this.sttMode);
+        cfg.apiKey = this.apiKeyField.getText().trim();
     }
 
     private void scanAndCycleOllamaModels(boolean cycleIfAlreadyLoaded) {
@@ -224,6 +303,16 @@ public class VicConfigScreen extends Screen {
         return Text.literal("AI Mode: ").append(Text.literal(label).formatted(color, Formatting.BOLD));
     }
 
+    private Text getTtsModeText() {
+        Formatting color = "OFF".equals(this.ttsMode) ? Formatting.RED : Formatting.GREEN;
+        return Text.literal("TTS: ").append(Text.literal(this.ttsMode).formatted(color, Formatting.BOLD));
+    }
+
+    private Text getSttModeText() {
+        Formatting color = "OFF".equals(this.sttMode) ? Formatting.RED : Formatting.AQUA;
+        return Text.literal("Mic STT: ").append(Text.literal(this.sttMode).formatted(color, Formatting.BOLD));
+    }
+
     private Text getDaysButtonText() {
         return Text.literal("Trial Length: ").append(Text.literal(this.countdownDays + " Days").formatted(Formatting.YELLOW));
     }
@@ -237,6 +326,8 @@ public class VicConfigScreen extends Screen {
     private void saveChanges() {
         VicConfig cfg = VicConfig.get();
         cfg.setProvider(this.aiProvider);
+        cfg.setTtsMode(this.ttsMode);
+        cfg.setSttMode(this.sttMode);
         cfg.ollamaUrl = this.ollamaUrlField.getText().trim();
         cfg.ollamaModel = this.ollamaModelField.getText().trim();
         cfg.apiEndpoint = this.apiEndpointField.getText().trim();
@@ -252,8 +343,9 @@ public class VicConfigScreen extends Screen {
         if (this.client != null && this.client.player != null) {
             this.client.player.sendMessage(
                     Text.literal("[Vic Config] ").formatted(Formatting.YELLOW, Formatting.BOLD)
-                            .append(Text.literal("Saved! Mode=" + cfg.getEffectiveProvider() +
-                                    ("OLLAMA".equals(cfg.getEffectiveProvider()) ? " (" + cfg.ollamaModel + ")" : "")).formatted(Formatting.GREEN)),
+                            .append(Text.literal("Saved! AI=" + cfg.getEffectiveProvider()
+                                    + ", TTS=" + cfg.getEffectiveTtsMode()
+                                    + ", Mic=" + cfg.getEffectiveSttMode()).formatted(Formatting.GREEN)),
                     true
             );
         }
@@ -274,27 +366,36 @@ public class VicConfigScreen extends Screen {
         int leftColX = centerX - 155;
         int rightColX = centerX + 5;
 
-        context.drawCenteredTextWithShadow(this.textRenderer, this.title, centerX, 12, 0xFFE135);
+        context.drawCenteredTextWithShadow(this.textRenderer, this.title, centerX, 10, 0xFFE135);
 
         if ("OLLAMA".equals(this.aiProvider)) {
-            context.drawTextWithShadow(this.textRenderer, Text.literal("Ollama Base URL:"), leftColX, 60, 0xCCCCCC);
-            context.drawTextWithShadow(this.textRenderer, Text.literal("Ollama Model:"), rightColX, 60, 0xCCCCCC);
+            context.drawTextWithShadow(this.textRenderer, Text.literal("Ollama Base URL:"), leftColX, 50, 0xCCCCCC);
+            context.drawTextWithShadow(this.textRenderer, Text.literal("Ollama Model:"), rightColX, 50, 0xCCCCCC);
         } else if ("OPENAI".equals(this.aiProvider)) {
-            context.drawTextWithShadow(this.textRenderer, Text.literal("API Endpoint URL:"), leftColX, 60, 0xCCCCCC);
-            context.drawTextWithShadow(this.textRenderer, Text.literal("Model Name:"), rightColX, 60, 0xCCCCCC);
-            context.drawTextWithShadow(this.textRenderer, Text.literal("Bearer API Key:"), leftColX, 98, 0xCCCCCC);
+            context.drawTextWithShadow(this.textRenderer, Text.literal("API Endpoint URL:"), leftColX, 50, 0xCCCCCC);
+            context.drawTextWithShadow(this.textRenderer, Text.literal("Model Name:"), rightColX, 50, 0xCCCCCC);
         } else {
             context.drawCenteredTextWithShadow(
                     this.textRenderer,
                     Text.literal("Using built-in stage-aware dialogue (no external AI server required)."),
                     centerX,
-                    76,
+                    64,
                     0xAAAAAA
             );
         }
 
+        context.drawTextWithShadow(this.textRenderer, Text.literal("API Key (for Remote LLM / Whisper Voice STT):"), leftColX, 84, 0xCCCCCC);
+
         if (this.statusText != null && !this.statusText.isEmpty()) {
-            context.drawCenteredTextWithShadow(this.textRenderer, Text.literal(this.statusText), centerX, 112, this.statusColor);
+            context.drawCenteredTextWithShadow(this.textRenderer, Text.literal(this.statusText), centerX, this.height - 40, this.statusColor);
+        } else {
+            context.drawCenteredTextWithShadow(
+                    this.textRenderer,
+                    Text.literal("Tip: Hold [R] in-game to talk to Vic with your microphone!"),
+                    centerX,
+                    this.height - 40,
+                    0xAAAAAA
+            );
         }
     }
 }
