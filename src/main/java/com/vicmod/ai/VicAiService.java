@@ -39,6 +39,55 @@ public class VicAiService {
             .connectTimeout(Duration.ofSeconds(8))
             .build();
     private static final Random RANDOM = new Random();
+    private static volatile boolean attemptedAutoStartOllama = false;
+
+    public static void ensureLocalOllamaReady() {
+        VicConfig cfg = VicConfig.get();
+        if (!"OLLAMA".equals(cfg.getEffectiveProvider())) {
+            return;
+        }
+        fetchOllamaModels(cfg.ollamaUrl).thenAccept(models -> {
+            if (!models.isEmpty()) {
+                syncDefaultModelIfMissing(cfg, models);
+                return;
+            }
+            // If localhost Ollama isn't responding yet and 'ollama' is installed locally, start 'ollama serve'
+            if (!attemptedAutoStartOllama
+                    && (cfg.ollamaUrl.contains("localhost") || cfg.ollamaUrl.contains("127.0.0.1"))
+                    && VicTtsService.isBinaryAvailable("ollama")) {
+                attemptedAutoStartOllama = true;
+                try {
+                    VicMod.LOGGER.info("Starting local 'ollama serve' background daemon for Vic...");
+                    new ProcessBuilder("ollama", "serve")
+                            .redirectErrorStream(true)
+                            .start();
+                    CompletableFuture.delayedExecutor(2, java.util.concurrent.TimeUnit.SECONDS).execute(() -> {
+                        fetchOllamaModels(cfg.ollamaUrl).thenAccept(retryModels -> {
+                            if (!retryModels.isEmpty()) {
+                                syncDefaultModelIfMissing(cfg, retryModels);
+                            }
+                        });
+                    });
+                } catch (Exception e) {
+                    VicMod.LOGGER.debug("Could not auto-start ollama serve", e);
+                }
+            }
+        });
+    }
+
+    private static void syncDefaultModelIfMissing(VicConfig cfg, List<String> installedModels) {
+        if (installedModels == null || installedModels.isEmpty()) return;
+        String current = cfg.ollamaModel == null ? "" : cfg.ollamaModel.trim();
+        for (String m : installedModels) {
+            if (m.equalsIgnoreCase(current) || m.startsWith(current + ":")) {
+                return;
+            }
+        }
+        String firstInstalled = installedModels.getFirst();
+        VicMod.LOGGER.info("Auto-selecting installed local Ollama model: {}", firstInstalled);
+        cfg.ollamaModel = firstInstalled;
+        VicConfig.save();
+    }
 
     public static void handlePlayerMessage(ServerPlayerEntity player, String rawMessage) {
         ServerWorld world = player.getServerWorld();
@@ -124,6 +173,10 @@ public class VicAiService {
     }
 
     private static void queryOllamaLlm(ServerPlayerEntity player, VicEntity vic, VicWorldState state, int stage, String userMessage) {
+        queryOllamaLlmWithRetry(player, vic, state, stage, userMessage, true);
+    }
+
+    private static void queryOllamaLlmWithRetry(ServerPlayerEntity player, VicEntity vic, VicWorldState state, int stage, String userMessage, boolean allowModelAutoFix) {
         VicConfig config = VicConfig.get();
         String systemPrompt = buildSystemPrompt(player, state, stage, config.countdownDays);
         String base = normalizeOllamaBaseUrl(config.ollamaUrl);
@@ -161,6 +214,25 @@ public class VicAiService {
 
             CompletableFuture<HttpResponse<String>> future = HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofString());
             future.whenComplete((response, error) -> {
+                if (allowModelAutoFix && (error != null || (response != null && response.statusCode() == 404))) {
+                    // Auto-start Ollama or auto-select installed model if the configured model wasn't found
+                    ensureLocalOllamaReady();
+                    fetchOllamaModels(config.ollamaUrl).thenAccept(models -> {
+                        if (!models.isEmpty()) {
+                            syncDefaultModelIfMissing(config, models);
+                            player.getServer().execute(() ->
+                                    queryOllamaLlmWithRetry(player, vic, state, stage, userMessage, false)
+                            );
+                        } else {
+                            player.getServer().execute(() -> {
+                                String fallback = generateScriptedResponse(player, vic, state, stage, userMessage);
+                                processAndDeliverResponse(player, vic, state, stage, fallback);
+                            });
+                        }
+                    });
+                    return;
+                }
+
                 player.getServer().execute(() -> {
                     if (error != null || response == null || response.statusCode() >= 400) {
                         VicMod.LOGGER.warn("Ollama request failed (status={}, error={}), falling back to scripted response",

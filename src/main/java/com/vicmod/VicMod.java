@@ -51,6 +51,7 @@ public class VicMod implements ModInitializer {
     @Override
     public void onInitialize() {
         VicConfig.load();
+        VicAiService.ensureLocalOllamaReady();
         ModEntities.register();
         ModItems.register();
 

@@ -41,8 +41,8 @@ While in-game, you can open the **Vic Mod Configuration GUI** at any time by:
 
 From the GUI you can:
 - Switch **AI Mode** between:
+  - **Ollama (Local LLM)** *(Default — connects to your local Ollama server at `http://localhost:11434`, auto-starts `ollama serve` if needed, and auto-detects installed models)*
   - **Built-in Offline Scripted** (no external AI server required)
-  - **Ollama (Local LLM)** (connects to your local Ollama server, default `http://localhost:11434`)
   - **Remote API (OpenAI / Groq)** (connects to any OpenAI-compatible `/v1/chat/completions` endpoint)
 - Click **Models** in Ollama mode to automatically scan `http://localhost:11434/api/tags` and cycle through all models installed on your machine.
 - Toggle **Trial Length (Days)**, **Auto-Spawn Box**, **World Decay**, and **Night Darkness**.
@@ -54,14 +54,14 @@ You can also manage Ollama models directly from chat:
 - `/vic ollama url <url>` — Changes the Ollama server URL (default `http://localhost:11434`).
 
 ### 3. Text-to-Speech (TTS) & Microphone Voice Input
-- **Text-to-Speech (TTS)**:
-  - Enabled out of the box! Whenever Vic replies, unboxes, or awakens, he speaks his dialogue out loud with stage-aware pitch and corruption effects (bright and cheerful in Stage 0 -> uncanny in Stage 1 -> glitching in Stage 2 -> deep demonic distortion in Stage 3).
-  - Supports **Built-in Formant Synth (`SYNTH`)** (zero external dependencies), **System TTS (`SYSTEM`)** (`espeak-ng`, `espeak`, `spd-say`, macOS `say`, Windows SAPI), and **Remote API TTS (`OPENAI_TTS`)** (`/v1/audio/speech`).
-  - Test or change TTS in the **`V`** Config Menu (click **`Test`** to cycle stages) or via `/vic tts test [0-3]` and `/vic tts <auto|synth|system|openai_tts|off>`.
-- **Microphone Voice Input (Push-to-Talk)**:
+- **Text-to-Speech (TTS)** *(Default: `LOCAL`)*:
+  - Enabled out of the box! Whenever Vic replies, unboxes, or awakens, he speaks his dialogue locally with stage-aware pitch and corruption effects (bright and cheerful in Stage 0 -> uncanny in Stage 1 -> glitching in Stage 2 -> deep demonic distortion in Stage 3).
+  - Defaults to **`LOCAL`** (uses local OS TTS like `espeak-ng`/`spd-say`/`say` if installed, or the built-in zero-dependency **Formant Synth (`SYNTH`)**). Also supports **Remote API TTS (`OPENAI_TTS`)** (`/v1/audio/speech`).
+  - Test or change TTS in the **`V`** Config Menu (click **`Test`** to cycle stages) or via `/vic tts test [0-3]` and `/vic tts <local|synth|system|openai_tts|off>`.
+- **Microphone Voice Input (Push-to-Talk)** *(Default: `LOCAL_CLI`)*:
   - **Hold `R`** in-game to record your voice and release **`R`** to transcribe and send your message directly to Vic (rebindable under *Options -> Controls -> Key Binds -> Vic Mod*).
   - Or run `/vic listen [seconds]` in chat to record for a fixed duration.
-  - Supports **Whisper API (`WHISPER_API`)** (Groq `whisper-large-v3-turbo`, OpenAI, or local Whisper HTTP servers) and **Local CLI (`LOCAL_CLI`)** (`faster-whisper`, `whisper-cli`, `vosk-transcriber`, or Python `speech_recognition`).
+  - Defaults to **`LOCAL_CLI`** (`faster-whisper`, `whisper-cli`, `vosk-transcriber`, or Python `speech_recognition`), and also supports **Whisper API (`WHISPER_API`)** (local Whisper HTTP servers at `http://localhost:8000/v1/audio/transcriptions`, Groq `whisper-large-v3-turbo`, or OpenAI).
 
 ---
 

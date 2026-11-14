@@ -132,11 +132,11 @@ public class VicConfigScreen extends Screen {
         // 4. Text-to-Speech (TTS) & Voice Input (STT) Controls
         this.ttsModeButton = ButtonWidget.builder(getTtsModeText(), btn -> {
             this.ttsMode = switch (this.ttsMode) {
-                case "AUTO" -> "SYNTH";
+                case "LOCAL" -> "SYNTH";
                 case "SYNTH" -> "SYSTEM";
                 case "SYSTEM" -> "OPENAI_TTS";
                 case "OPENAI_TTS" -> "OFF";
-                default -> "AUTO";
+                default -> "LOCAL";
             };
             btn.setMessage(getTtsModeText());
         }).dimensions(leftColX, y, 108, 20).build();
@@ -159,10 +159,10 @@ public class VicConfigScreen extends Screen {
 
         this.sttModeButton = ButtonWidget.builder(getSttModeText(), btn -> {
             this.sttMode = switch (this.sttMode) {
+                case "LOCAL_CLI" -> "AUTO";
                 case "AUTO" -> "WHISPER_API";
-                case "WHISPER_API" -> "LOCAL_CLI";
-                case "LOCAL_CLI" -> "OFF";
-                default -> "AUTO";
+                case "WHISPER_API" -> "OFF";
+                default -> "LOCAL_CLI";
             };
             btn.setMessage(getSttModeText());
         }).dimensions(rightColX, y, 108, 20).build();
