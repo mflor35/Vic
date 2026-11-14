@@ -203,7 +203,7 @@ public class VicTtsService {
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(payload.toString()));
 
-            String key = cfg.getEffectiveSttApiKey();
+            String key = cfg.apiKey == null ? "" : cfg.apiKey.trim();
             if (!key.isEmpty()) {
                 reqBuilder.header("Authorization", "Bearer " + key);
             }

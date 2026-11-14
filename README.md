@@ -57,11 +57,11 @@ You can also manage Ollama models directly from chat:
 - **Text-to-Speech (TTS)** *(Default: `LOCAL`)*:
   - Enabled out of the box! Whenever Vic replies, unboxes, or awakens, he speaks his dialogue locally with stage-aware pitch and corruption effects (bright and cheerful in Stage 0 -> uncanny in Stage 1 -> glitching in Stage 2 -> deep demonic distortion in Stage 3).
   - Defaults to **`LOCAL`** (uses local OS TTS like `espeak-ng`/`spd-say`/`say` if installed, or the built-in zero-dependency **Formant Synth (`SYNTH`)**). Also supports **Remote API TTS (`OPENAI_TTS`)** (`/v1/audio/speech`).
-  - Test or change TTS in the **`V`** Config Menu (click **`Test`** to cycle stages) or via `/vic tts test [0-3]` and `/vic tts <local|synth|system|openai_tts|off>`.
+  - Test or change TTS in the **`V`** Config Menu (click **`Test`** to cycle stages); set the OpenAI-compatible TTS voice there as well. You can also use `/vic tts test [0-3]` and `/vic tts <local|synth|system|openai_tts|off>`.
 - **Microphone Voice Input (Push-to-Talk)** *(Default: `LOCAL_CLI`)*:
   - **Hold `R`** in-game to record your voice and release **`R`** to transcribe and send your message directly to Vic (rebindable under *Options -> Controls -> Key Binds -> Vic Mod*).
-  - Or run `/vic listen [seconds]` in chat to record for a fixed duration.
-  - Defaults to **`LOCAL_CLI`** (`faster-whisper`, `whisper-cli`, `vosk-transcriber`, or Python `speech_recognition`), and also supports **Whisper API (`WHISPER_API`)** (local Whisper HTTP servers at `http://localhost:8000/v1/audio/transcriptions`, Groq `whisper-large-v3-turbo`, or OpenAI).
+  - Or run `/vic listen [seconds]` in chat to record for a fixed duration using your client microphone. Transcribed requests go privately to Vic through `/vic say`, not to public chat.
+  - Defaults to **`LOCAL_CLI`** (`faster-whisper`, `whisper-cli`, or `vosk-transcriber`); this mode does not send audio to an online service. **`AUTO`** can fall back to **Whisper API (`WHISPER_API`)** (local Whisper HTTP servers at `http://localhost:8000/v1/audio/transcriptions`, Groq `whisper-large-v3-turbo`, or OpenAI).
 
 ---
 

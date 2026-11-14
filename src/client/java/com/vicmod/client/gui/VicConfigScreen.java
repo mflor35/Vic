@@ -34,6 +34,7 @@ public class VicConfigScreen extends Screen {
     private TextFieldWidget apiEndpointField;
     private TextFieldWidget apiModelField;
     private TextFieldWidget apiKeyField;
+    private TextFieldWidget ttsVoiceField;
 
     private ButtonWidget providerButton;
     private ButtonWidget ttsModeButton;
@@ -121,11 +122,16 @@ public class VicConfigScreen extends Screen {
 
         y += 34;
 
-        // API Key field (always visible or visible for OpenAI / Whisper STT)
-        this.apiKeyField = new TextFieldWidget(this.textRenderer, leftColX, y + 10, 310, 20, Text.literal("API Key (Groq / OpenAI / Whisper STT)"));
+        // API credentials and TTS voice
+        this.apiKeyField = new TextFieldWidget(this.textRenderer, leftColX, y + 10, 150, 20, Text.literal("API Key"));
         this.apiKeyField.setMaxLength(256);
         this.apiKeyField.setText(cfg.apiKey != null ? cfg.apiKey : "");
         this.addDrawableChild(this.apiKeyField);
+
+        this.ttsVoiceField = new TextFieldWidget(this.textRenderer, rightColX, y + 10, 150, 20, Text.literal("OpenAI TTS Voice"));
+        this.ttsVoiceField.setMaxLength(64);
+        this.ttsVoiceField.setText(cfg.ttsVoice != null ? cfg.ttsVoice : "alloy");
+        this.addDrawableChild(this.ttsVoiceField);
 
         y += 36;
 
@@ -250,6 +256,7 @@ public class VicConfigScreen extends Screen {
         cfg.setTtsMode(this.ttsMode);
         cfg.setSttMode(this.sttMode);
         cfg.apiKey = this.apiKeyField.getText().trim();
+        cfg.ttsVoice = this.ttsVoiceField.getText().trim();
     }
 
     private void scanAndCycleOllamaModels(boolean cycleIfAlreadyLoaded) {
@@ -333,6 +340,10 @@ public class VicConfigScreen extends Screen {
         cfg.apiEndpoint = this.apiEndpointField.getText().trim();
         cfg.apiModel = this.apiModelField.getText().trim();
         cfg.apiKey = this.apiKeyField.getText().trim();
+        cfg.ttsVoice = this.ttsVoiceField.getText().trim();
+        if (cfg.ttsVoice.isBlank()) {
+            cfg.ttsVoice = "alloy";
+        }
         cfg.countdownDays = this.countdownDays;
         cfg.autoSpawnDeliveryBoxOnFirstJoin = this.autoSpawnBox;
         cfg.enableWorldDecay = this.enableWorldDecay;
@@ -384,7 +395,8 @@ public class VicConfigScreen extends Screen {
             );
         }
 
-        context.drawTextWithShadow(this.textRenderer, Text.literal("API Key (for Remote LLM / Whisper Voice STT):"), leftColX, 84, 0xCCCCCC);
+        context.drawTextWithShadow(this.textRenderer, Text.literal("API Key:"), leftColX, 84, 0xCCCCCC);
+        context.drawTextWithShadow(this.textRenderer, Text.literal("OpenAI TTS voice:"), rightColX, 84, 0xCCCCCC);
 
         if (this.statusText != null && !this.statusText.isEmpty()) {
             context.drawCenteredTextWithShadow(this.textRenderer, Text.literal(this.statusText), centerX, this.height - 40, this.statusColor);

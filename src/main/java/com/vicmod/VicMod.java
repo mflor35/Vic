@@ -13,7 +13,6 @@ import com.vicmod.registry.ModEntities;
 import com.vicmod.registry.ModItems;
 import com.vicmod.state.VicWorldState;
 import com.vicmod.voice.VicTtsService;
-import com.vicmod.voice.VicVoiceInputService;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
@@ -296,19 +295,6 @@ public class VicMod implements ModInitializer {
                                         ctx.getSource().sendFeedback(() -> Text.literal("Vic TTS voice mode set to: " + cfg.getEffectiveTtsMode()).formatted(Formatting.GREEN), false);
                                         return 1;
                                     })))
-                    .then(CommandManager.literal("listen")
-                            .executes(ctx -> {
-                                ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
-                                startCommandVoiceListen(player, 4);
-                                return 1;
-                            })
-                            .then(CommandManager.argument("seconds", IntegerArgumentType.integer(2, 12))
-                                    .executes(ctx -> {
-                                        ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
-                                        int seconds = IntegerArgumentType.getInteger(ctx, "seconds");
-                                        startCommandVoiceListen(player, seconds);
-                                        return 1;
-                                    })))
                     .then(CommandManager.literal("say")
                             .then(CommandManager.argument("message", StringArgumentType.greedyString())
                                     .executes(ctx -> {
@@ -470,29 +456,4 @@ public class VicMod implements ModInitializer {
         });
     }
 
-    private void startCommandVoiceListen(ServerPlayerEntity player, int seconds) {
-        player.sendMessage(
-                Text.literal("● REC ").formatted(Formatting.RED, Formatting.BOLD)
-                        .append(Text.literal("Listening to your microphone for " + seconds + " seconds... Speak now!").formatted(Formatting.YELLOW)),
-                false
-        );
-        VicVoiceInputService.recordFixedDurationAndTranscribe(seconds, res -> {
-            player.getServer().execute(() -> {
-                if (res.success() && !res.text().isBlank()) {
-                    player.sendMessage(
-                            Text.literal("[You (Voice)] ").formatted(Formatting.AQUA, Formatting.BOLD)
-                                    .append(Text.literal(res.text()).formatted(Formatting.WHITE)),
-                            false
-                    );
-                    VicAiService.handlePlayerMessage(player, res.text());
-                } else {
-                    player.sendMessage(
-                            Text.literal("[Vic Voice] ").formatted(Formatting.RED, Formatting.BOLD)
-                                    .append(Text.literal(res.errorMessage()).formatted(Formatting.YELLOW)),
-                            false
-                    );
-                }
-            });
-        });
-    }
 }

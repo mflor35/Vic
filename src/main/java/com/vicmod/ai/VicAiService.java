@@ -393,6 +393,7 @@ public class VicAiService {
                 "Player Status: Health=" + health + "/20, Hunger=" + food + "/20, Pos=(" + pos.getX() + "," + pos.getY() + "," + pos.getZ() + "), Night=" + isNight + ". " +
                 "Persona instructions: " + stagePersona + "\n" +
                 "Available Action Tags (include at most ONE tag at the very end of your reply if appropriate):\n" +
+                "- [ACTION:GIVE_GOLDEN_APPLE] if the player asks for healing or a golden apple.\n" +
                 "- [ACTION:GIVE_FOOD] if the player asks for food or is hungry.\n" +
                 "- [ACTION:GIVE_TORCH] if the player asks for light or torches.\n" +
                 "- [ACTION:GIVE_IRON] if the player politely asks for iron or tools.\n" +
@@ -408,6 +409,16 @@ public class VicAiService {
         int maxDays = VicConfig.get().countdownDays;
 
         // Check for direct assistance requests first
+        if (lower.contains("heal") || lower.contains("healing") || lower.contains("golden apple")
+                || lower.contains("injured") || lower.contains("hurt")) {
+            return switch (stage) {
+                case 0 -> "A golden apple should patch you right up! Catch! [ACTION:GIVE_GOLDEN_APPLE]";
+                case 1 -> "A little extra recovery should help. Here, take this golden apple. [ACTION:GIVE_GOLDEN_APPLE]";
+                case 2 -> "You are damaged, and I would prefer you remain intact for now. Eat this. [ACTION:GIVE_GOLDEN_APPLE]";
+                default -> "Keep your strength up. I need you alive a little longer. [ACTION:GIVE_GOLDEN_APPLE]";
+            };
+        }
+
         if (lower.contains("food") || lower.contains("hungry") || lower.contains("eat") || lower.contains("bread") || lower.contains("apple")) {
             if (karma < -25) {
                 return "Here. Chew on something permanent instead. [ACTION:GIVE_BEDROCK]";
@@ -549,6 +560,11 @@ public class VicAiService {
 
     private static void executeActionTag(ServerPlayerEntity player, VicEntity vic, ServerWorld world, String action) {
         switch (action) {
+            case "GIVE_GOLDEN_APPLE" -> {
+                if (vic.canGrantAssistance(player, 600)) {
+                    tossItemToPlayer(world, vic, player, new ItemStack(Items.GOLDEN_APPLE, 1));
+                }
+            }
             case "GIVE_FOOD" -> {
                 if (vic.canGrantAssistance(player, 200)) {
                     tossItemToPlayer(world, vic, player, new ItemStack(Items.COOKED_BEEF, 3));

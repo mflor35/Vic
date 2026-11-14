@@ -248,16 +248,7 @@ public class VicVoiceInputService {
                         "    print(' '.join(s.text.strip() for s in segs).strip())\n" +
                         "    sys.exit(0)\n" +
                         "except ImportError:\n" +
-                        "    pass\n" +
-                        "try:\n" +
-                        "    import speech_recognition as sr\n" +
-                        "    r = sr.Recognizer()\n" +
-                        "    with sr.AudioFile(wav) as src:\n" +
-                        "        audio = r.record(src)\n" +
-                        "    print(r.recognize_google(audio).strip())\n" +
-                        "    sys.exit(0)\n" +
-                        "except Exception as e:\n" +
-                        "    sys.exit(2)\n";
+                    "    sys.exit(2)\n";
                 pb = new ProcessBuilder("python3", "-c", pyScript, absPath);
             }
 
@@ -300,7 +291,7 @@ public class VicVoiceInputService {
 
         boolean isLocalEndpoint = endpoint.contains("localhost") || endpoint.contains("127.0.0.1");
         if (apiKey.isEmpty() && !isLocalEndpoint) {
-            // Try Python SpeechRecognition fallback before failing if no API key is set
+            // Try installed local recognizers before failing if no API key is set.
             TranscriptionResult pyFallback = transcribeViaLocalCli(wavFile, cfg);
             if (pyFallback.success()) {
                 return pyFallback;
