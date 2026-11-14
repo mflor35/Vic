@@ -54,14 +54,14 @@ You can also manage Ollama models directly from chat:
 - `/vic ollama url <url>` — Changes the Ollama server URL (default `http://localhost:11434`).
 
 ### 3. Text-to-Speech (TTS) & Microphone Voice Input
-- **Text-to-Speech (TTS)** *(Default: `LOCAL`)*:
+- **Text-to-Speech (TTS)** *(Default: `SHERPA`)*:
   - Enabled out of the box! Whenever Vic replies, unboxes, or awakens, he speaks his dialogue locally with stage-aware pitch and corruption effects (bright and cheerful in Stage 0 -> uncanny in Stage 1 -> glitching in Stage 2 -> deep demonic distortion in Stage 3).
-  - Defaults to **`LOCAL`** (uses local OS TTS like `espeak-ng`/`spd-say`/`say` if installed, or the built-in zero-dependency **Formant Synth (`SYNTH`)**). Also supports **Remote API TTS (`OPENAI_TTS`)** (`/v1/audio/speech`).
-  - Test or change TTS in the **`V`** Config Menu (click **`Test`** to cycle stages); set the OpenAI-compatible TTS voice there as well. You can also use `/vic tts test [0-3]` and `/vic tts <local|synth|system|openai_tts|off>`.
-- **Microphone Voice Input (Push-to-Talk)** *(Default: `LOCAL_CLI`)*:
+  - **`SHERPA`** runs Piper neural TTS in-process with Sherpa-ONNX and a bundled 78 MB English voice model and pronunciation lexicon. It extracts these to `config/vic/tts/` on first use; the mod jar includes native runtimes for Linux, macOS, and Windows x64/ARM64. The voice is trained on LibriTTS-R (CC BY 4.0; attribution is included in the mod resources). If Sherpa cannot initialize, Vic tries the external Piper CLI, system TTS (`espeak-ng`/`spd-say`/`say`), then the built-in **Formant Synth (`SYNTH`)**.
+  - **`PIPER`** remains available for an external Piper CLI and a separately installed voice model. Also supports **Remote API TTS (`OPENAI_TTS`)** (`/v1/audio/speech`). Test or change TTS in the **`V`** Config Menu (click **`Test`** to cycle stages); set the OpenAI-compatible TTS voice there as well. You can also use `/vic tts test [0-3]` and `/vic tts <sherpa|piper|local|synth|system|openai_tts|off>`.
+- **Microphone Voice Input (Push-to-Talk)** *(Default: `SHERPA`)*:
   - **Hold `R`** in-game to record your voice and release **`R`** to transcribe and send your message directly to Vic (rebindable under *Options -> Controls -> Key Binds -> Vic Mod*).
-  - Or run `/vic listen [seconds]` in chat to record for a fixed duration using your client microphone. Transcribed requests go privately to Vic through `/vic say`, not to public chat.
-  - Defaults to **`LOCAL_CLI`** (`faster-whisper`, `whisper-cli`, or `vosk-transcriber`); this mode does not send audio to an online service. **`AUTO`** can fall back to **Whisper API (`WHISPER_API`)** (local Whisper HTTP servers at `http://localhost:8000/v1/audio/transcriptions`, Groq `whisper-large-v3-turbo`, or OpenAI).
+  - Or run `/viclisten [seconds]` in chat to record for a fixed duration using your client microphone. Transcribed requests go privately to Vic through `/vic say`, not to public chat.
+  - Defaults to **`SHERPA`**, which uses the bundled, offline English Zipformer-small model through Sherpa-ONNX. The model is Apache-2.0 licensed and is extracted to `config/vic/stt/` on first use. **`LOCAL_CLI`** is also fully local; **`AUTO`** tries Sherpa, then an installed local CLI, then the configured Whisper API fallback (audio may be sent remotely).
 
 ---
 

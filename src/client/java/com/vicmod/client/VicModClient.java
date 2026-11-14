@@ -77,18 +77,17 @@ public class VicModClient implements ClientModInitializer {
                         client.send(() -> client.setScreen(new VicConfigScreen(client.currentScreen)));
                         return 1;
                     }));
-            dispatcher.register(ClientCommandManager.literal("vic")
-                    .then(ClientCommandManager.literal("listen")
+            dispatcher.register(ClientCommandManager.literal("viclisten")
+                    .executes(ctx -> {
+                        startVoiceListen(ctx.getSource().getClient(), 4);
+                        return 1;
+                    })
+                    .then(ClientCommandManager.argument("seconds", IntegerArgumentType.integer(2, 12))
                             .executes(ctx -> {
-                                startVoiceListen(ctx.getSource().getClient(), 4);
+                                int seconds = IntegerArgumentType.getInteger(ctx, "seconds");
+                                startVoiceListen(ctx.getSource().getClient(), seconds);
                                 return 1;
-                            })
-                            .then(ClientCommandManager.argument("seconds", IntegerArgumentType.integer(2, 12))
-                                    .executes(ctx -> {
-                                        int seconds = IntegerArgumentType.getInteger(ctx, "seconds");
-                                        startVoiceListen(ctx.getSource().getClient(), seconds);
-                                        return 1;
-                                    }))));
+                            })));
         });
     }
 

@@ -32,18 +32,19 @@ public class VicConfig {
     public String apiKey = "";
     public String apiModel = "llama-3.3-70b-versatile";
 
-    // Text-to-Speech (TTS) settings — Default to LOCAL out of the box
-    // ttsMode: "LOCAL", "SYNTH", "SYSTEM", "OPENAI_TTS", or "OFF"
+    // Text-to-Speech (TTS) settings — Bundled Sherpa-ONNX Piper voice is preferred
+    // ttsMode: "SHERPA", "PIPER", "LOCAL", "SYNTH", "SYSTEM", "OPENAI_TTS", or "OFF"
     public boolean enableTts = true;
-    public String ttsMode = "LOCAL";
+    public String ttsMode = "SHERPA";
+    public String piperModelPath = "";
     public String ttsEndpoint = "https://api.openai.com/v1/audio/speech";
     public String ttsVoice = "alloy";
     public float ttsVolume = 0.85f;
 
-    // Voice Input / Speech-to-Text (STT) settings — Default to LOCAL_CLI (with auto-fallback)
-    // sttMode: "LOCAL_CLI", "AUTO", "WHISPER_API", or "OFF"
+    // Voice Input / Speech-to-Text (STT) settings — Bundled Sherpa model runs offline
+    // sttMode: "SHERPA", "LOCAL_CLI", "AUTO", "WHISPER_API", or "OFF"
     public boolean enableVoiceInput = true;
-    public String sttMode = "LOCAL_CLI";
+    public String sttMode = "SHERPA";
     public String sttEndpoint = "http://localhost:8000/v1/audio/transcriptions";
     public String sttModel = "whisper-large-v3-turbo";
     public String sttApiKey = "";
@@ -87,15 +88,15 @@ public class VicConfig {
 
     public String getEffectiveTtsMode() {
         if (!enableTts || ttsMode == null || ttsMode.isBlank()) {
-            return enableTts ? "LOCAL" : "OFF";
+            return enableTts ? "SHERPA" : "OFF";
         }
         String upper = ttsMode.trim().toUpperCase();
         if ("OFF".equals(upper)) return "OFF";
         if ("AUTO".equals(upper)) return "LOCAL";
-        if ("LOCAL".equals(upper) || "SYNTH".equals(upper) || "SYSTEM".equals(upper) || "OPENAI_TTS".equals(upper)) {
+        if ("SHERPA".equals(upper) || "PIPER".equals(upper) || "LOCAL".equals(upper) || "SYNTH".equals(upper) || "SYSTEM".equals(upper) || "OPENAI_TTS".equals(upper)) {
             return upper;
         }
-        return "LOCAL";
+        return "SHERPA";
     }
 
     public void setTtsMode(String mode) {
@@ -106,34 +107,34 @@ public class VicConfig {
         } else {
             this.enableTts = true;
             this.ttsMode = switch (upper) {
-                case "SYNTH", "SYSTEM", "OPENAI_TTS" -> upper;
-                default -> "LOCAL";
+                case "SHERPA", "PIPER", "SYNTH", "SYSTEM", "OPENAI_TTS", "LOCAL" -> upper;
+                default -> "SHERPA";
             };
         }
     }
 
     public String getEffectiveSttMode() {
         if (!enableVoiceInput || sttMode == null || sttMode.isBlank()) {
-            return enableVoiceInput ? "LOCAL_CLI" : "OFF";
+            return enableVoiceInput ? "SHERPA" : "OFF";
         }
         String upper = sttMode.trim().toUpperCase();
         if ("OFF".equals(upper)) return "OFF";
-        if ("WHISPER_API".equals(upper) || "LOCAL_CLI".equals(upper) || "AUTO".equals(upper)) {
+        if ("SHERPA".equals(upper) || "WHISPER_API".equals(upper) || "LOCAL_CLI".equals(upper) || "AUTO".equals(upper)) {
             return upper;
         }
-        return "LOCAL_CLI";
+        return "SHERPA";
     }
 
     public void setSttMode(String mode) {
-        String upper = mode == null ? "LOCAL_CLI" : mode.trim().toUpperCase();
+        String upper = mode == null ? "SHERPA" : mode.trim().toUpperCase();
         if ("OFF".equals(upper)) {
             this.enableVoiceInput = false;
             this.sttMode = "OFF";
         } else {
             this.enableVoiceInput = true;
             this.sttMode = switch (upper) {
-                case "WHISPER_API", "AUTO" -> upper;
-                default -> "LOCAL_CLI";
+                case "SHERPA", "WHISPER_API", "AUTO", "LOCAL_CLI" -> upper;
+                default -> "SHERPA";
             };
         }
     }
@@ -169,11 +170,15 @@ public class VicConfig {
                     migrated = true;
                 }
                 if (INSTANCE.ttsMode == null || INSTANCE.ttsMode.isBlank() || "AUTO".equalsIgnoreCase(INSTANCE.ttsMode)) {
-                    INSTANCE.ttsMode = INSTANCE.enableTts ? "LOCAL" : "OFF";
+                    INSTANCE.ttsMode = INSTANCE.enableTts ? "SHERPA" : "OFF";
+                    migrated = true;
+                } else if ("LOCAL".equalsIgnoreCase(INSTANCE.ttsMode)
+                    || "PIPER".equalsIgnoreCase(INSTANCE.ttsMode)) {
+                    INSTANCE.ttsMode = "SHERPA";
                     migrated = true;
                 }
                 if (INSTANCE.sttMode == null || INSTANCE.sttMode.isBlank()) {
-                    INSTANCE.sttMode = INSTANCE.enableVoiceInput ? "LOCAL_CLI" : "OFF";
+                    INSTANCE.sttMode = INSTANCE.enableVoiceInput ? "SHERPA" : "OFF";
                     migrated = true;
                 }
                 if (migrated) {

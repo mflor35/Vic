@@ -35,6 +35,7 @@ public class VicConfigScreen extends Screen {
     private TextFieldWidget apiModelField;
     private TextFieldWidget apiKeyField;
     private TextFieldWidget ttsVoiceField;
+    private TextFieldWidget piperModelPathField;
 
     private ButtonWidget providerButton;
     private ButtonWidget ttsModeButton;
@@ -138,11 +139,13 @@ public class VicConfigScreen extends Screen {
         // 4. Text-to-Speech (TTS) & Voice Input (STT) Controls
         this.ttsModeButton = ButtonWidget.builder(getTtsModeText(), btn -> {
             this.ttsMode = switch (this.ttsMode) {
+                case "SHERPA" -> "PIPER";
+                case "PIPER" -> "LOCAL";
                 case "LOCAL" -> "SYNTH";
                 case "SYNTH" -> "SYSTEM";
                 case "SYSTEM" -> "OPENAI_TTS";
                 case "OPENAI_TTS" -> "OFF";
-                default -> "LOCAL";
+                default -> "SHERPA";
             };
             btn.setMessage(getTtsModeText());
         }).dimensions(leftColX, y, 108, 20).build();
@@ -165,10 +168,11 @@ public class VicConfigScreen extends Screen {
 
         this.sttModeButton = ButtonWidget.builder(getSttModeText(), btn -> {
             this.sttMode = switch (this.sttMode) {
+                case "SHERPA" -> "LOCAL_CLI";
                 case "LOCAL_CLI" -> "AUTO";
                 case "AUTO" -> "WHISPER_API";
                 case "WHISPER_API" -> "OFF";
-                default -> "LOCAL_CLI";
+                default -> "SHERPA";
             };
             btn.setMessage(getSttModeText());
         }).dimensions(rightColX, y, 108, 20).build();
@@ -193,6 +197,13 @@ public class VicConfigScreen extends Screen {
         this.addDrawableChild(this.testMicButton);
 
         y += 24;
+
+        this.piperModelPathField = new TextFieldWidget(this.textRenderer, leftColX, y + 10, 310, 20, Text.literal("Piper voice model path"));
+        this.piperModelPathField.setMaxLength(512);
+        this.piperModelPathField.setText(cfg.piperModelPath != null ? cfg.piperModelPath : "");
+        this.addDrawableChild(this.piperModelPathField);
+
+        y += 34;
 
         // 5. Gameplay Toggles (2 columns)
         this.daysButton = ButtonWidget.builder(getDaysButtonText(), btn -> {
@@ -257,6 +268,7 @@ public class VicConfigScreen extends Screen {
         cfg.setSttMode(this.sttMode);
         cfg.apiKey = this.apiKeyField.getText().trim();
         cfg.ttsVoice = this.ttsVoiceField.getText().trim();
+        cfg.piperModelPath = this.piperModelPathField.getText().trim();
     }
 
     private void scanAndCycleOllamaModels(boolean cycleIfAlreadyLoaded) {
@@ -316,7 +328,8 @@ public class VicConfigScreen extends Screen {
     }
 
     private Text getSttModeText() {
-        Formatting color = "OFF".equals(this.sttMode) ? Formatting.RED : Formatting.AQUA;
+        Formatting color = "OFF".equals(this.sttMode) ? Formatting.RED
+            : "SHERPA".equals(this.sttMode) ? Formatting.GREEN : Formatting.AQUA;
         return Text.literal("Mic STT: ").append(Text.literal(this.sttMode).formatted(color, Formatting.BOLD));
     }
 
@@ -341,6 +354,7 @@ public class VicConfigScreen extends Screen {
         cfg.apiModel = this.apiModelField.getText().trim();
         cfg.apiKey = this.apiKeyField.getText().trim();
         cfg.ttsVoice = this.ttsVoiceField.getText().trim();
+        cfg.piperModelPath = this.piperModelPathField.getText().trim();
         if (cfg.ttsVoice.isBlank()) {
             cfg.ttsVoice = "alloy";
         }
@@ -397,6 +411,7 @@ public class VicConfigScreen extends Screen {
 
         context.drawTextWithShadow(this.textRenderer, Text.literal("API Key:"), leftColX, 84, 0xCCCCCC);
         context.drawTextWithShadow(this.textRenderer, Text.literal("OpenAI TTS voice:"), rightColX, 84, 0xCCCCCC);
+        context.drawTextWithShadow(this.textRenderer, Text.literal("Piper model (.onnx; blank = auto-detect):"), leftColX, 144, 0xCCCCCC);
 
         if (this.statusText != null && !this.statusText.isEmpty()) {
             context.drawCenteredTextWithShadow(this.textRenderer, Text.literal(this.statusText), centerX, this.height - 40, this.statusColor);

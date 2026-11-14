@@ -3,6 +3,13 @@ package com.vicmod.voice;
 import com.google.gson.JsonObject;
 import com.vicmod.VicMod;
 import com.vicmod.config.VicConfig;
+import com.k2fsa.sherpa.onnx.GeneratedAudio;
+import com.k2fsa.sherpa.onnx.GenerationConfig;
+import com.k2fsa.sherpa.onnx.OfflineTts;
+import com.k2fsa.sherpa.onnx.OfflineTtsConfig;
+import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig;
+import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig;
+import net.fabricmc.loader.api.FabricLoader;
 
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioInputStream;
@@ -21,8 +28,11 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
@@ -39,6 +49,9 @@ public class VicTtsService {
             .build();
 
     private static final AtomicReference<Process> ACTIVE_PROCESS = new AtomicReference<>();
+    private static final AtomicBoolean PIPER_SETUP_WARNING_LOGGED = new AtomicBoolean(false);
+    private static final AtomicBoolean SHERPA_WARNING_LOGGED = new AtomicBoolean(false);
+    private static volatile OfflineTts SHERPA_TTS;
     private static volatile boolean cancelRequested = false;
 
     public static void speak(String rawText, int stage) {
@@ -59,6 +72,21 @@ public class VicTtsService {
         TTS_EXECUTOR.submit(() -> {
             try {
                 switch (mode) {
+                    case "SHERPA" -> {
+                        if (!trySpeakSherpa(cleanText, stage, cfg)
+                                && !cancelRequested
+                                && !trySpeakPiper(cleanText, stage, cfg)
+                                && !trySpeakSystem(cleanText, stage)) {
+                            speakBuiltInSynth(cleanText, stage, cfg.ttsVolume);
+                        }
+                    }
+                    case "PIPER" -> {
+                        if (!trySpeakPiper(cleanText, stage, cfg)
+                                && !cancelRequested
+                                && !trySpeakSystem(cleanText, stage)) {
+                            speakBuiltInSynth(cleanText, stage, cfg.ttsVolume);
+                        }
+                    }
                     case "SYSTEM" -> {
                         if (!trySpeakSystem(cleanText, stage)) {
                             speakBuiltInSynth(cleanText, stage, cfg.ttsVolume);
@@ -96,6 +124,195 @@ public class VicTtsService {
                 .replaceAll("\\[ACTION:[^\\]]*\\]", "")
                 .replaceAll("[*_~`<>]", "")
                 .trim();
+    }
+
+    private static boolean trySpeakSherpa(String text, int stage, VicConfig cfg) {
+        try {
+            OfflineTts tts = getSherpaTts();
+            GenerationConfig generationConfig = new GenerationConfig();
+            generationConfig.setSid(0);
+            generationConfig.setSpeed(switch (stage) {
+                case 0 -> 1.04f;
+                case 1 -> 1.0f;
+                case 2 -> 0.94f;
+                default -> 0.88f;
+            });
+            GeneratedAudio audio = tts.generateWithConfigAndCallback(text, generationConfig, samples -> 1);
+            if (audio == null || audio.getSamples() == null || audio.getSamples().length == 0 || cancelRequested) {
+                return cancelRequested;
+            }
+            return playViaJavaSound(convertSherpaSamples(audio.getSamples(), cfg.ttsVolume), audio.getSampleRate());
+        } catch (Exception | LinkageError e) {
+            if (SHERPA_WARNING_LOGGED.compareAndSet(false, true)) {
+                VicMod.LOGGER.warn("Sherpa-ONNX TTS unavailable (cause={}); trying Piper/system fallback",
+                        e.getClass().getSimpleName());
+            }
+            return false;
+        }
+    }
+
+    private static synchronized OfflineTts getSherpaTts() throws IOException {
+        if (SHERPA_TTS != null) {
+            return SHERPA_TTS;
+        }
+
+        Path modelDirectory = extractSherpaModel();
+        OfflineTtsVitsModelConfig vitsConfig = OfflineTtsVitsModelConfig.builder()
+                .setModel(modelDirectory.resolve("en_US-libritts_r-medium.onnx").toString())
+                .setTokens(modelDirectory.resolve("tokens.txt").toString())
+            .setLexicon(modelDirectory.resolve("lexicon-en-us.txt").toString())
+                .build();
+        OfflineTtsModelConfig modelConfig = OfflineTtsModelConfig.builder()
+                .setVits(vitsConfig)
+                .setNumThreads(Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() / 2)))
+                .setDebug(false)
+                .build();
+        SHERPA_TTS = new OfflineTts(OfflineTtsConfig.builder().setModel(modelConfig).build());
+        SHERPA_WARNING_LOGGED.set(false);
+        return SHERPA_TTS;
+    }
+
+    private static Path extractSherpaModel() throws IOException {
+        Path directory = FabricLoader.getInstance().getConfigDir()
+                .resolve("vic/tts/sherpa-libritts-r-v1");
+        Path model = directory.resolve("en_US-libritts_r-medium.onnx");
+        Path tokens = directory.resolve("tokens.txt");
+        Path lexicon = directory.resolve("lexicon-en-us.txt");
+        if (Files.isRegularFile(model) && Files.isRegularFile(tokens) && Files.isRegularFile(lexicon)) {
+            return directory;
+        }
+
+        Files.createDirectories(directory);
+        copyBundledResource("assets/vic/voice/sherpa/en_US-libritts_r-medium.onnx", model);
+        copyBundledResource("assets/vic/voice/sherpa/tokens.txt", tokens);
+        copyBundledResource("assets/vic/voice/sherpa/lexicon-en-us.txt", lexicon);
+        return directory;
+    }
+
+    private static void copyBundledResource(String resourcePath, Path destination) throws IOException {
+        try (var input = VicTtsService.class.getClassLoader().getResourceAsStream(resourcePath)) {
+            if (input == null) {
+                throw new IOException("Bundled Sherpa resource is missing: " + resourcePath);
+            }
+            Files.copy(input, destination, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private static byte[] convertSherpaSamples(float[] samples, float volume) {
+        float safeVolume = Math.clamp(volume, 0.0f, 1.0f);
+        byte[] pcm = new byte[samples.length * 2];
+        for (int i = 0; i < samples.length; i++) {
+            int sample = Math.round(Math.clamp(samples[i] * safeVolume, -1.0f, 1.0f) * 32767.0f);
+            pcm[i * 2] = (byte) sample;
+            pcm[i * 2 + 1] = (byte) (sample >>> 8);
+        }
+        return pcm;
+    }
+
+    private static boolean trySpeakPiper(String text, int stage, VicConfig cfg) {
+        String piperBin = resolveBinary("piper");
+        if (piperBin == null) {
+            logPiperSetupOnce("Piper executable not found on PATH");
+            return false;
+        }
+
+        Path modelPath = resolvePiperModelPath(cfg);
+        if (modelPath == null || !Files.isRegularFile(modelPath)
+                || !Files.isRegularFile(Path.of(modelPath + ".json"))) {
+            logPiperSetupOnce("Piper voice model or companion .onnx.json file not found");
+            return false;
+        }
+
+        Path outputPath = null;
+        Process process = null;
+        try {
+            outputPath = Files.createTempFile("vic_piper_", ".wav");
+            ProcessBuilder processBuilder = new ProcessBuilder(
+                    piperBin, "--model", modelPath.toString(), "--output_file", outputPath.toString()
+            );
+            processBuilder.redirectOutput(ProcessBuilder.Redirect.DISCARD);
+            processBuilder.redirectError(ProcessBuilder.Redirect.DISCARD);
+            process = processBuilder.start();
+            ACTIVE_PROCESS.set(process);
+            try (var input = process.getOutputStream()) {
+                input.write(text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                input.write('\n');
+            }
+
+            int exitCode = process.waitFor();
+            ACTIVE_PROCESS.compareAndSet(process, null);
+            if (cancelRequested) return true;
+            if (exitCode != 0 || !Files.isRegularFile(outputPath) || Files.size(outputPath) <= 44) {
+                VicMod.LOGGER.warn("Piper synthesis failed (model={}, exitCode={}); trying fallback TTS",
+                        modelPath.getFileName(), exitCode);
+                return false;
+            }
+
+            byte[] wavBytes = Files.readAllBytes(outputPath);
+            boolean played = playAudioFile(outputPath, wavBytes);
+            if (played) {
+                PIPER_SETUP_WARNING_LOGGED.set(false);
+            }
+            return played;
+        } catch (Exception e) {
+            VicMod.LOGGER.warn("Piper synthesis failed (model={}, cause={}); trying fallback TTS",
+                    modelPath.getFileName(), e.getClass().getSimpleName());
+            return false;
+        } finally {
+            if (process != null) {
+                ACTIVE_PROCESS.compareAndSet(process, null);
+            }
+            if (outputPath != null) {
+                try {
+                    Files.deleteIfExists(outputPath);
+                } catch (IOException e) {
+                    VicMod.LOGGER.debug("Could not remove temporary Piper audio file");
+                }
+            }
+        }
+    }
+
+    private static Path resolvePiperModelPath(VicConfig cfg) {
+        String configuredPath = cfg.piperModelPath == null ? "" : cfg.piperModelPath.trim();
+        if (!configuredPath.isEmpty()) {
+            return expandHome(configuredPath);
+        }
+
+        String environmentPath = System.getenv("PIPER_MODEL");
+        if (environmentPath != null && !environmentPath.isBlank()) {
+            return expandHome(environmentPath.trim());
+        }
+
+        Path home = Paths.get(System.getProperty("user.home", "."));
+        Path modelDirectory = home.resolve(".local").resolve("share").resolve("piper");
+        Path commonModel = modelDirectory.resolve("en_US-lessac-medium.onnx");
+        if (Files.isRegularFile(commonModel)) {
+            return commonModel;
+        }
+        try (var files = Files.list(modelDirectory)) {
+            return files.filter(path -> path.getFileName().toString().endsWith(".onnx"))
+                    .sorted()
+                    .findFirst()
+                    .orElse(null);
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    private static Path expandHome(String path) {
+        if (path.equals("~")) {
+            return Paths.get(System.getProperty("user.home", "."));
+        }
+        if (path.startsWith("~/") || path.startsWith("~\\")) {
+            return Paths.get(System.getProperty("user.home", "."), path.substring(2));
+        }
+        return Paths.get(path);
+    }
+
+    private static void logPiperSetupOnce(String reason) {
+        if (PIPER_SETUP_WARNING_LOGGED.compareAndSet(false, true)) {
+            VicMod.LOGGER.warn("{}; install Piper and a voice model, or set piperModelPath. Using system TTS/synth fallback.", reason);
+        }
     }
 
     private static boolean trySpeakSystem(String text, int stage) {
@@ -488,15 +705,25 @@ public class VicTtsService {
     }
 
     public static boolean isBinaryAvailable(String binary) {
+        return resolveBinary(binary) != null;
+    }
+
+    public static String resolveBinary(String binary) {
         String pathEnv = System.getenv("PATH");
-        if (pathEnv == null) return false;
-        for (String dir : pathEnv.split(File.pathSeparator)) {
-            File file = new File(dir, binary);
-            if (file.isFile() && file.canExecute()) {
-                return true;
+        if (pathEnv != null) {
+            for (String dir : pathEnv.split(File.pathSeparator)) {
+                File file = new File(dir, binary);
+                if (file.isFile() && file.canExecute()) {
+                    return file.getAbsolutePath();
+                }
             }
         }
-        return false;
+        Path localBin = Paths.get(System.getProperty("user.home", "."), ".local", "bin", binary);
+        File localFile = localBin.toFile();
+        if (localFile.isFile() && localFile.canExecute()) {
+            return localFile.getAbsolutePath();
+        }
+        return null;
     }
 
     private static boolean runProcess(ProcessBuilder pb) {

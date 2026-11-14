@@ -5,11 +5,19 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.vicmod.VicMod;
 import com.vicmod.config.VicConfig;
+import com.k2fsa.sherpa.onnx.OfflineModelConfig;
+import com.k2fsa.sherpa.onnx.OfflineRecognizer;
+import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig;
+import com.k2fsa.sherpa.onnx.OfflineStream;
+import com.k2fsa.sherpa.onnx.OfflineTransducerModelConfig;
+import net.fabricmc.loader.api.FabricLoader;
 
+import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.DataLine;
 import javax.sound.sampled.TargetDataLine;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -17,6 +25,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -41,6 +50,8 @@ public class VicVoiceInputService {
     private static volatile TargetDataLine activeTargetLine;
     private static volatile ByteArrayOutputStream recordedPcmStream;
     private static volatile long recordingStartMs;
+    private static volatile OfflineRecognizer sherpaRecognizer;
+    private static final AtomicBoolean SHERPA_WARNING_LOGGED = new AtomicBoolean(false);
 
     public record TranscriptionResult(boolean success, String text, String errorMessage) {
     }
@@ -188,13 +199,18 @@ public class VicVoiceInputService {
             tmpWav = Files.createTempFile("vic_voice_in_", ".wav");
             Files.write(tmpWav, wavBytes);
 
-            if ("LOCAL_CLI".equals(mode)) {
+            if ("SHERPA".equals(mode)) {
+                return transcribeViaSherpa(wavBytes);
+            } else if ("LOCAL_CLI".equals(mode)) {
                 return transcribeViaLocalCli(tmpWav, cfg);
             } else if ("WHISPER_API".equals(mode)) {
                 return transcribeViaWhisperApi(tmpWav, wavBytes, cfg);
             } else {
-                // AUTO mode:
-                // 1. If a custom local STT command or local Whisper/Vosk CLI is installed, try it first
+                TranscriptionResult sherpaResult = transcribeViaSherpa(wavBytes);
+                if (sherpaResult.success()) {
+                    return sherpaResult;
+                }
+                // AUTO mode: 1. Sherpa model, 2. local CLI, 3. configured HTTP API.
                 if ((cfg.localSttCommand != null && !cfg.localSttCommand.isBlank()) || hasLocalSttSupport()) {
                     TranscriptionResult localRes = transcribeViaLocalCli(tmpWav, cfg);
                     if (localRes.success()) {
@@ -216,6 +232,106 @@ public class VicVoiceInputService {
                 }
             }
         }
+    }
+
+    private static TranscriptionResult transcribeViaSherpa(byte[] wavBytes) {
+        OfflineStream stream = null;
+        try (AudioInputStream audio = AudioSystem.getAudioInputStream(new ByteArrayInputStream(wavBytes))) {
+            AudioFormat format = audio.getFormat();
+            if (format.getChannels() != 1 || format.getSampleSizeInBits() != 16
+                    || format.getEncoding() != AudioFormat.Encoding.PCM_SIGNED) {
+                return new TranscriptionResult(false, "", "Sherpa STT requires 16-bit mono PCM audio.");
+            }
+
+            byte[] pcm = audio.readAllBytes();
+            float[] samples = new float[pcm.length / 2];
+            for (int i = 0; i < samples.length; i++) {
+                int low = pcm[i * 2] & 0xFF;
+                int high = pcm[i * 2 + 1];
+                short value = (short) (format.isBigEndian() ? (low << 8) | (high & 0xFF) : low | (high << 8));
+                samples[i] = value / 32768.0f;
+            }
+
+            OfflineRecognizer recognizer = getSherpaRecognizer();
+            String text;
+            synchronized (recognizer) {
+                stream = recognizer.createStream();
+                stream.acceptWaveform(samples, (int) format.getSampleRate());
+                recognizer.decode(stream);
+                text = recognizer.getResult(stream).getText().trim();
+            }
+            if (text.isEmpty()) {
+                return new TranscriptionResult(false, "", "Sherpa did not recognize speech. Try speaking closer to the microphone.");
+            }
+            return new TranscriptionResult(true, text, "");
+        } catch (Exception | LinkageError e) {
+            String cause = describeException(e);
+            if (SHERPA_WARNING_LOGGED.compareAndSet(false, true)) {
+                VicMod.LOGGER.warn("Sherpa STT failed (cause={})", cause);
+            }
+            return new TranscriptionResult(false, "", "Sherpa STT failed (" + cause + ").");
+        } finally {
+            if (stream != null) {
+                stream.release();
+            }
+        }
+    }
+
+    private static synchronized OfflineRecognizer getSherpaRecognizer() throws java.io.IOException {
+        if (sherpaRecognizer != null) {
+            return sherpaRecognizer;
+        }
+
+        Path modelDirectory = extractSherpaAsrModel();
+        OfflineTransducerModelConfig transducer = OfflineTransducerModelConfig.builder()
+                .setEncoder(modelDirectory.resolve("encoder-epoch-99-avg-1.int8.onnx").toString())
+                .setDecoder(modelDirectory.resolve("decoder-epoch-99-avg-1.onnx").toString())
+                .setJoiner(modelDirectory.resolve("joiner-epoch-99-avg-1.int8.onnx").toString())
+                .build();
+        OfflineModelConfig model = OfflineModelConfig.builder()
+                .setTransducer(transducer)
+                .setTokens(modelDirectory.resolve("tokens.txt").toString())
+                .setNumThreads(Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() / 2)))
+                .setDebug(false)
+                .build();
+        OfflineRecognizerConfig config = OfflineRecognizerConfig.builder()
+                .setOfflineModelConfig(model)
+                .setDecodingMethod("greedy_search")
+                .build();
+        sherpaRecognizer = new OfflineRecognizer(config);
+        SHERPA_WARNING_LOGGED.set(false);
+        VicMod.LOGGER.info("Loaded bundled Sherpa English STT model");
+        return sherpaRecognizer;
+    }
+
+    private static Path extractSherpaAsrModel() throws java.io.IOException {
+        Path directory = FabricLoader.getInstance().getConfigDir()
+                .resolve("vic/stt/sherpa-zipformer-small-en-v1");
+        String[] modelFiles = {
+                "encoder-epoch-99-avg-1.int8.onnx",
+                "decoder-epoch-99-avg-1.onnx",
+                "joiner-epoch-99-avg-1.int8.onnx",
+                "tokens.txt"
+        };
+        boolean complete = true;
+        for (String file : modelFiles) {
+            complete &= Files.isRegularFile(directory.resolve(file));
+        }
+        if (complete) {
+            return directory;
+        }
+
+        Files.createDirectories(directory);
+        for (String file : modelFiles) {
+            try (InputStream input = VicVoiceInputService.class.getClassLoader()
+                    .getResourceAsStream("assets/vic/voice/sherpa-asr/" + file)) {
+                if (input == null) {
+                    throw new java.io.IOException("Bundled Sherpa STT resource is missing: " + file);
+                }
+                Files.copy(input, directory.resolve(file), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+        }
+        return directory;
     }
 
     private static boolean hasLocalSttSupport() {
@@ -244,13 +360,13 @@ public class VicVoiceInputService {
                 String cmd = cfg.localSttCommand.replace("{file}", absPath);
                 pb = new ProcessBuilder("sh", "-c", cmd);
             } else if (VicTtsService.isBinaryAvailable("whisper-cli")) {
-                pb = new ProcessBuilder("whisper-cli", "-np", "-nt", "-f", absPath);
+                pb = new ProcessBuilder(VicTtsService.resolveBinary("whisper-cli"), "-np", "-nt", "-f", absPath);
             } else if (VicTtsService.isBinaryAvailable("vosk-transcriber")) {
-                pb = new ProcessBuilder("vosk-transcriber", "-i", absPath);
+                pb = new ProcessBuilder(VicTtsService.resolveBinary("vosk-transcriber"), "-i", absPath);
             } else if (VicTtsService.isBinaryAvailable("faster-whisper")) {
-                pb = new ProcessBuilder("faster-whisper", absPath, "--model", "base", "--output_format", "txt");
+                pb = new ProcessBuilder(VicTtsService.resolveBinary("faster-whisper"), absPath, "--model", "base", "--output_format", "txt");
             } else if (VicTtsService.isBinaryAvailable("whisper")) {
-                pb = new ProcessBuilder("whisper", absPath, "--model", "base", "--output_format", "txt", "--verbose", "False");
+                pb = new ProcessBuilder(VicTtsService.resolveBinary("whisper"), absPath, "--model", "base", "--output_format", "txt", "--verbose", "False");
             } else if (VicTtsService.isBinaryAvailable("python3")) {
                 String pyScript = "import sys\n" +
                         "wav = sys.argv[1]\n" +
