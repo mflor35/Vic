@@ -100,7 +100,7 @@ public class VicConfigScreen extends Screen {
 
         this.ollamaModelField = new TextFieldWidget(this.textRenderer, rightColX, y + 10, 95, 20, Text.literal("Ollama Model"));
         this.ollamaModelField.setMaxLength(128);
-        this.ollamaModelField.setText(cfg.ollamaModel != null ? cfg.ollamaModel : "llama3.2");
+        this.ollamaModelField.setText(cfg.ollamaModel != null ? cfg.ollamaModel : "timheinrich2011/verity-3b:latest");
         this.addDrawableChild(this.ollamaModelField);
 
         this.scanOllamaButton = ButtonWidget.builder(Text.literal("Models").formatted(Formatting.AQUA), btn -> {

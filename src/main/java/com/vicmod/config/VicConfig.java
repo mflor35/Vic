@@ -24,7 +24,7 @@ public class VicConfig {
 
     // Ollama settings
     public String ollamaUrl = "http://localhost:11434";
-    public String ollamaModel = "llama3.2";
+    public String ollamaModel = "timheinrich2011/verity-3b:latest";
 
     // OpenAI-compatible API settings (Groq, OpenAI, OpenRouter, etc.)
     public String apiEndpoint = "https://api.groq.com/openai/v1/chat/completions";

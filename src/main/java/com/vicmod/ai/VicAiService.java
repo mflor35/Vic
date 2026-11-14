@@ -180,11 +180,12 @@ public class VicAiService {
         VicConfig config = VicConfig.get();
         String systemPrompt = buildSystemPrompt(player, state, stage, config.countdownDays);
         String base = normalizeOllamaBaseUrl(config.ollamaUrl);
-        String model = (config.ollamaModel == null || config.ollamaModel.isBlank()) ? "llama3.2" : config.ollamaModel.trim();
+        String model = (config.ollamaModel == null || config.ollamaModel.isBlank()) ? "timheinrich2011/verity-3b:latest" : config.ollamaModel.trim();
 
         JsonObject payload = new JsonObject();
         payload.addProperty("model", model);
         payload.addProperty("stream", false);
+        payload.addProperty("think", false);
 
         JsonObject options = new JsonObject();
         options.addProperty("temperature", 0.8);
