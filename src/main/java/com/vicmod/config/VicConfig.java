@@ -2,6 +2,7 @@ package com.vicmod.config;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonParseException;
 import com.vicmod.VicMod;
 import net.fabricmc.loader.api.FabricLoader;
 
@@ -178,6 +179,10 @@ public class VicConfig {
                 if (migrated) {
                     save();
                 }
+            } catch (JsonParseException e) {
+                VicMod.LOGGER.error("Invalid JSON in {} ({}); using defaults and leaving the file untouched",
+                        CONFIG_PATH, e.getClass().getSimpleName());
+                INSTANCE = new VicConfig();
             } catch (IOException e) {
                 VicMod.LOGGER.error("Failed to read vic.json config, using defaults", e);
                 INSTANCE = new VicConfig();

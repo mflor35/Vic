@@ -41,6 +41,24 @@ public class VicAiService {
     private static final Random RANDOM = new Random();
     private static volatile boolean attemptedAutoStartOllama = false;
 
+    private static String endpointHost(String endpoint) {
+        try {
+            String host = URI.create(endpoint).getHost();
+            return host == null || host.isBlank() ? "unknown host" : host;
+        } catch (IllegalArgumentException e) {
+            return "invalid endpoint";
+        }
+    }
+
+    private static String failureType(Throwable error) {
+        if (error == null) return "none";
+        Throwable cause = error;
+        while (cause.getCause() != null && cause.getCause() != cause) {
+            cause = cause.getCause();
+        }
+        return cause.getClass().getSimpleName();
+    }
+
     public static void ensureLocalOllamaReady() {
         VicConfig cfg = VicConfig.get();
         if (!"OLLAMA".equals(cfg.getEffectiveProvider())) {
@@ -153,7 +171,15 @@ public class VicAiService {
             return HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                     .thenApply(response -> {
                         List<String> models = new ArrayList<>();
-                        if (response != null && response.statusCode() == 200 && response.body() != null) {
+                        if (response == null) {
+                            VicMod.LOGGER.debug("Ollama model discovery returned no response (host={})", endpointHost(base));
+                            return models;
+                        }
+                        if (response.statusCode() != 200) {
+                            VicMod.LOGGER.debug("Ollama model discovery returned HTTP {} (host={})", response.statusCode(), endpointHost(base));
+                            return models;
+                        }
+                        if (response.body() != null) {
                             JsonObject root = JsonParser.parseString(response.body()).getAsJsonObject();
                             JsonArray arr = root.getAsJsonArray("models");
                             if (arr != null) {
@@ -166,8 +192,12 @@ public class VicAiService {
                         }
                         return models;
                     })
-                    .exceptionally(err -> List.of());
+                    .exceptionally(err -> {
+                        VicMod.LOGGER.debug("Ollama model discovery failed (host={}, cause={})", endpointHost(base), failureType(err));
+                        return List.of();
+                    });
         } catch (Exception e) {
+            VicMod.LOGGER.debug("Could not start Ollama model discovery (host={}, cause={})", endpointHost(base), failureType(e));
             return CompletableFuture.completedFuture(List.of());
         }
     }
@@ -226,6 +256,8 @@ public class VicAiService {
                             );
                         } else {
                             player.getServer().execute(() -> {
+                                VicMod.LOGGER.warn("Ollama unavailable or no models are installed (host={}, model={}); using scripted response",
+                                        endpointHost(base), model);
                                 String fallback = generateScriptedResponse(player, vic, state, stage, userMessage);
                                 processAndDeliverResponse(player, vic, state, stage, fallback);
                             });
@@ -236,9 +268,11 @@ public class VicAiService {
 
                 player.getServer().execute(() -> {
                     if (error != null || response == null || response.statusCode() >= 400) {
-                        VicMod.LOGGER.warn("Ollama request failed (status={}, error={}), falling back to scripted response",
+                        VicMod.LOGGER.warn("Ollama request failed (host={}, model={}, status={}, cause={}); using scripted response",
+                            endpointHost(base),
+                            model,
                                 response != null ? response.statusCode() : "N/A",
-                                error != null ? error.getMessage() : "none");
+                            failureType(error));
                         String fallback = generateScriptedResponse(player, vic, state, stage, userMessage);
                         processAndDeliverResponse(player, vic, state, stage, fallback);
                         return;
@@ -272,13 +306,16 @@ public class VicAiService {
                             }
                         }
                     } catch (Exception e) {
-                        VicMod.LOGGER.warn("Failed to parse Ollama response, falling back to scripted engine", e);
+                        VicMod.LOGGER.warn("Failed to parse Ollama response (host={}, model={}, cause={}); using scripted response",
+                                endpointHost(base), model, failureType(e));
                     }
                     String fallback = generateScriptedResponse(player, vic, state, stage, userMessage);
                     processAndDeliverResponse(player, vic, state, stage, fallback);
                 });
             });
         } catch (Exception e) {
+            VicMod.LOGGER.warn("Could not create Ollama request (host={}, model={}, cause={}); using scripted response",
+                    endpointHost(base), model, failureType(e));
             String fallback = generateScriptedResponse(player, vic, state, stage, userMessage);
             processAndDeliverResponse(player, vic, state, stage, fallback);
         }
@@ -344,6 +381,11 @@ public class VicAiService {
             future.whenComplete((response, error) -> {
                 player.getServer().execute(() -> {
                     if (error != null || response == null || response.statusCode() >= 400) {
+                        VicMod.LOGGER.warn("External LLM request failed (provider=OPENAI, host={}, model={}, status={}, cause={}); using scripted response",
+                                endpointHost(config.apiEndpoint),
+                                config.apiModel,
+                                response != null ? response.statusCode() : "N/A",
+                                failureType(error));
                         String fallback = generateScriptedResponse(player, vic, state, stage, userMessage);
                         processAndDeliverResponse(player, vic, state, stage, fallback);
                         return;
@@ -361,13 +403,16 @@ public class VicAiService {
                             }
                         }
                     } catch (Exception e) {
-                        VicMod.LOGGER.warn("Failed to parse LLM response, falling back to scripted engine", e);
+                        VicMod.LOGGER.warn("Failed to parse external LLM response (provider=OPENAI, model={}, cause={}); using scripted response",
+                                config.apiModel, failureType(e));
                     }
                     String fallback = generateScriptedResponse(player, vic, state, stage, userMessage);
                     processAndDeliverResponse(player, vic, state, stage, fallback);
                 });
             });
         } catch (Exception e) {
+            VicMod.LOGGER.warn("Could not create external LLM request (provider=OPENAI, host={}, model={}, cause={}); using scripted response",
+                    endpointHost(config.apiEndpoint), config.apiModel, failureType(e));
             String fallback = generateScriptedResponse(player, vic, state, stage, userMessage);
             processAndDeliverResponse(player, vic, state, stage, fallback);
         }

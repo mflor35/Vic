@@ -205,7 +205,9 @@ public class VicVoiceInputService {
                 return transcribeViaWhisperApi(tmpWav, wavBytes, cfg);
             }
         } catch (Exception e) {
-            return new TranscriptionResult(false, "", "Failed to process recorded audio: " + e.getMessage());
+            String cause = describeException(e);
+            VicMod.LOGGER.warn("Failed to process recorded STT audio: mode={}, cause={}", mode, cause);
+            return new TranscriptionResult(false, "", "Failed to process recorded audio (" + cause + ").");
         } finally {
             if (tmpWav != null) {
                 try {
@@ -223,8 +225,19 @@ public class VicVoiceInputService {
                 || VicTtsService.isBinaryAvailable("vosk-transcriber");
     }
 
+    private static String getLocalSttBackend(VicConfig cfg) {
+        if (cfg.localSttCommand != null && !cfg.localSttCommand.isBlank()) return "custom command";
+        if (VicTtsService.isBinaryAvailable("whisper-cli")) return "whisper-cli";
+        if (VicTtsService.isBinaryAvailable("vosk-transcriber")) return "vosk-transcriber";
+        if (VicTtsService.isBinaryAvailable("faster-whisper")) return "faster-whisper";
+        if (VicTtsService.isBinaryAvailable("whisper")) return "whisper";
+        if (VicTtsService.isBinaryAvailable("python3")) return "python3/faster-whisper";
+        return null;
+    }
+
     private static TranscriptionResult transcribeViaLocalCli(Path wavFile, VicConfig cfg) {
         String absPath = wavFile.toAbsolutePath().toString();
+        String backend = getLocalSttBackend(cfg);
         try {
             ProcessBuilder pb = null;
             if (cfg.localSttCommand != null && !cfg.localSttCommand.isBlank()) {
@@ -248,14 +261,20 @@ public class VicVoiceInputService {
                         "    print(' '.join(s.text.strip() for s in segs).strip())\n" +
                         "    sys.exit(0)\n" +
                         "except ImportError:\n" +
-                    "    sys.exit(2)\n";
+                        "    sys.stderr.write('faster-whisper is not installed\\n')\n" +
+                        "    sys.exit(3)\n" +
+                        "except Exception as e:\n" +
+                        "    sys.stderr.write(type(e).__name__ + '\\n')\n" +
+                        "    sys.exit(4)\n";
                 pb = new ProcessBuilder("python3", "-c", pyScript, absPath);
             }
 
             if (pb == null) {
-                return new TranscriptionResult(false, "", "No local STT CLI found. Install 'faster-whisper' or set an API key in [V] Config.");
+                VicMod.LOGGER.warn("No local STT recognizer found. Install whisper-cli, faster-whisper, whisper, or vosk-transcriber.");
+                return new TranscriptionResult(false, "", "No local recognizer found. Install whisper-cli, faster-whisper, or vosk-transcriber.");
             }
 
+            VicMod.LOGGER.debug("Starting local STT backend={}", backend);
             pb.redirectErrorStream(true);
             Process proc = pb.start();
             String output = new String(proc.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
@@ -274,9 +293,22 @@ public class VicVoiceInputService {
                 String finalTxt = cleaned.isEmpty() ? output : cleaned.toString();
                 return new TranscriptionResult(true, finalTxt.trim(), "");
             }
-            return new TranscriptionResult(false, "", "Local STT returned empty transcript (exit=" + exit + ").");
+            VicMod.LOGGER.warn("Local STT backend failed (backend={}, exitCode={}, outputPresent={})",
+                    backend, exit, !output.isBlank());
+            if ("python3/faster-whisper".equals(backend) && exit == 3) {
+                return new TranscriptionResult(false, "", "Python is installed, but faster-whisper is missing. Install a local recognizer or use AUTO.");
+            }
+            if ("python3/faster-whisper".equals(backend) && exit == 4) {
+                return new TranscriptionResult(false, "", "faster-whisper could not load its model. Check the local model installation.");
+            }
+            if (exit == 0) {
+                return new TranscriptionResult(false, "", "No speech was recognized by " + backend + ". Try speaking closer to the microphone.");
+            }
+            return new TranscriptionResult(false, "", "Local recognizer " + backend + " failed (exit " + exit + "). Check its installation and model.");
         } catch (Exception e) {
-            return new TranscriptionResult(false, "", "Local STT error: " + e.getMessage());
+            String cause = describeException(e);
+            VicMod.LOGGER.warn("Local STT failed (backend={}, cause={})", backend, cause);
+            return new TranscriptionResult(false, "", "Local STT error using " + backend + " (" + cause + ").");
         }
     }
 
@@ -348,10 +380,99 @@ public class VicVoiceInputService {
                     return new TranscriptionResult(false, "", "No speech detected in microphone recording.");
                 }
             }
-            return new TranscriptionResult(false, "", "STT API HTTP " + response.statusCode() + ": check your STT endpoint/key in [V].");
+            int statusCode = response.statusCode();
+            String host = getEndpointHost(endpoint);
+                String providerMessage = extractProviderError(response.body());
+                String statusHint = getHttpStatusHint(statusCode);
+                VicMod.LOGGER.warn("STT API returned HTTP {}: host={}, model={}, hint={}, providerMessage={}",
+                    statusCode, host, model, statusHint, providerMessage);
+                return new TranscriptionResult(false, "", "STT API HTTP " + statusCode + " from " + host + ": "
+                    + statusHint + (providerMessage.isEmpty() ? "" : " (" + providerMessage + ")"));
         } catch (Exception e) {
-            return new TranscriptionResult(false, "", "STT request failed: " + e.getMessage());
+            String cause = describeException(e);
+            String host = getEndpointHost(endpoint);
+            VicMod.LOGGER.warn("STT API request failed: host={}, model={}, cause={}", host, model, cause);
+            return new TranscriptionResult(false, "", "STT request failed (" + cause + ") for " + host
+                    + ". Check that the endpoint is reachable and the model/key are valid.");
         }
+    }
+
+    private static String getEndpointHost(String endpoint) {
+        try {
+            String host = java.net.URI.create(endpoint).getHost();
+            return host == null || host.isBlank() ? "unknown host" : host;
+        } catch (IllegalArgumentException e) {
+            return "invalid endpoint";
+        }
+    }
+
+    private static String getHttpStatusHint(int statusCode) {
+        return switch (statusCode) {
+            case 400 -> "Request rejected; check the audio format and model";
+            case 401, 403 -> "Authentication failed; check the STT API key";
+            case 404 -> "Endpoint or model was not found";
+            case 413 -> "Audio is too large for this endpoint";
+            case 429 -> "Rate limit or quota exceeded";
+            case 500, 502, 503, 504 -> "STT service is temporarily unavailable";
+            default -> "Check the endpoint, model, and API key in [V] Config";
+        };
+    }
+
+    private static String extractProviderError(String responseBody) {
+        if (responseBody == null || responseBody.isBlank()) return "";
+        try {
+            JsonElement rootElement = JsonParser.parseString(responseBody);
+            if (!rootElement.isJsonObject()) return "";
+            JsonObject root = rootElement.getAsJsonObject();
+            JsonElement errorElement = root.get("error");
+            String message = "";
+            if (errorElement != null && errorElement.isJsonObject()) {
+                JsonElement nestedMessage = errorElement.getAsJsonObject().get("message");
+                if (nestedMessage != null && nestedMessage.isJsonPrimitive()) {
+                    message = nestedMessage.getAsString();
+                }
+            } else if (errorElement != null && errorElement.isJsonPrimitive()) {
+                message = errorElement.getAsString();
+            }
+            if (message.isBlank()) {
+                JsonElement detail = root.has("detail") ? root.get("detail") : root.get("message");
+                if (detail != null && detail.isJsonPrimitive()) {
+                    message = detail.getAsString();
+                }
+            }
+            return sanitizeProviderMessage(message);
+        } catch (RuntimeException e) {
+            return "";
+        }
+    }
+
+    private static String sanitizeProviderMessage(String message) {
+        if (message == null || message.isBlank()) return "";
+        String sanitized = message
+                .replaceAll("(?i)(api[_-]?key|token|password)([=:]\\s*)[^\\s&]+", "$1$2[redacted]")
+                .replaceAll("(?i)bearer\\s+[^\\s,;]+", "Bearer [redacted]")
+                .replaceAll("https?://[^\\s]+", "[url]")
+            .replaceAll("[\\r\\n\\t]+", " ")
+            .trim();
+        return sanitized.substring(0, Math.min(180, sanitized.length()));
+    }
+
+    private static String describeException(Throwable error) {
+        Throwable cause = error;
+        while (cause.getCause() != null && cause.getCause() != cause) {
+            cause = cause.getCause();
+        }
+
+        String description = cause.getClass().getSimpleName();
+        String message = cause.getMessage();
+        if (message != null && !message.isBlank()) {
+            String safeMessage = message
+                    .replaceAll("(?i)(api[_-]?key|token|password)([=:]\\s*)[^\\s&]+", "$1$2[redacted]")
+                    .replaceAll("(?i)bearer\\s+[^\\s,;]+", "Bearer [redacted]")
+                    .replaceAll("https?://[^\\s]+", "[url]");
+            description += ": " + safeMessage;
+        }
+        return description;
     }
 
     private static void writeMultipartField(ByteArrayOutputStream out, String boundary, String name, String value) throws Exception {

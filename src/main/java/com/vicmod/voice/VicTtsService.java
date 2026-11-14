@@ -179,15 +179,15 @@ public class VicTtsService {
     }
 
     private static boolean trySpeakOpenAiTts(String text, int stage, VicConfig cfg) {
+        String endpoint = (cfg.ttsEndpoint == null || cfg.ttsEndpoint.isBlank())
+            ? "https://api.openai.com/v1/audio/speech"
+            : cfg.ttsEndpoint.trim();
+        String voice = (cfg.ttsVoice == null || cfg.ttsVoice.isBlank()) ? "alloy" : cfg.ttsVoice.trim();
         try {
-            String endpoint = (cfg.ttsEndpoint == null || cfg.ttsEndpoint.isBlank())
-                    ? "https://api.openai.com/v1/audio/speech"
-                    : cfg.ttsEndpoint.trim();
-
             JsonObject payload = new JsonObject();
             payload.addProperty("model", "tts-1");
             payload.addProperty("input", text);
-            payload.addProperty("voice", (cfg.ttsVoice == null || cfg.ttsVoice.isBlank()) ? "alloy" : cfg.ttsVoice.trim());
+            payload.addProperty("voice", voice);
             payload.addProperty("response_format", "wav");
             double speed = switch (stage) {
                 case 0 -> 1.12;
@@ -209,18 +209,25 @@ public class VicTtsService {
             }
 
             HttpResponse<byte[]> response = HTTP_CLIENT.send(reqBuilder.build(), HttpResponse.BodyHandlers.ofByteArray());
-            if (response.statusCode() == 200 && response.body() != null && response.body().length > 100) {
-                Path tmpAudio = Files.createTempFile("vic_tts_api_", ".wav");
-                try {
-                    Files.write(tmpAudio, response.body());
-                    playAudioFile(tmpAudio, response.body());
-                    return true;
-                } finally {
-                    Files.deleteIfExists(tmpAudio);
-                }
+            if (response.statusCode() != 200) {
+                VicMod.LOGGER.warn("OpenAI-compatible TTS returned HTTP {} (voice={}); falling back to built-in synth",
+                        response.statusCode(), voice);
+                return false;
+            }
+            if (response.body() == null || response.body().length <= 100) {
+                VicMod.LOGGER.warn("OpenAI-compatible TTS returned an empty audio payload (voice={}); falling back to built-in synth", voice);
+                return false;
+            }
+            Path tmpAudio = Files.createTempFile("vic_tts_api_", ".wav");
+            try {
+                Files.write(tmpAudio, response.body());
+                return playAudioFile(tmpAudio, response.body());
+            } finally {
+                Files.deleteIfExists(tmpAudio);
             }
         } catch (Exception e) {
-            VicMod.LOGGER.warn("OpenAI TTS request failed, falling back to built-in synth", e);
+            VicMod.LOGGER.warn("OpenAI-compatible TTS request failed (voice={}, cause={}); falling back to built-in synth",
+                    voice, e.getClass().getSimpleName());
         }
         return false;
     }
@@ -240,33 +247,37 @@ public class VicTtsService {
             Path tmpWav = Files.createTempFile("vic_synth_", ".wav");
             try {
                 Files.write(tmpWav, wavBytes);
-                playAudioFile(tmpWav, wavBytes);
+                if (!playAudioFile(tmpWav, wavBytes)) {
+                    VicMod.LOGGER.warn("Vic built-in speech could not be played by any available audio backend");
+                }
             } finally {
                 Files.deleteIfExists(tmpWav);
             }
         } catch (IOException e) {
-            playViaJavaSound(pcmBytes, sampleRate);
+            if (!playViaJavaSound(pcmBytes, sampleRate)) {
+                VicMod.LOGGER.warn("Vic built-in speech could not be played after creating its WAV file failed");
+            }
         }
     }
 
-    private static void playAudioFile(Path wavFile, byte[] wavBytes) {
-        if (cancelRequested) return;
+    private static boolean playAudioFile(Path wavFile, byte[] wavBytes) {
+        if (cancelRequested) return true;
         String absPath = wavFile.toAbsolutePath().toString();
         String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
 
         if (os.contains("linux")) {
             if (isBinaryAvailable("paplay") && runProcess(new ProcessBuilder("paplay", absPath))) {
-                return;
+                return true;
             }
             if (isBinaryAvailable("ffplay") && runProcess(new ProcessBuilder("ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", absPath))) {
-                return;
+                return true;
             }
             if (isBinaryAvailable("aplay") && runProcess(new ProcessBuilder("aplay", "-q", absPath))) {
-                return;
+                return true;
             }
         } else if (os.contains("mac")) {
             if (isBinaryAvailable("afplay") && runProcess(new ProcessBuilder("afplay", absPath))) {
-                return;
+                return true;
             }
         }
 
@@ -286,12 +297,14 @@ public class VicTtsService {
                     line.drain();
                 }
             }
+            return true;
         } catch (Exception e) {
-            VicMod.LOGGER.debug("Java Sound playback fallback error", e);
+            VicMod.LOGGER.debug("Java Sound playback fallback failed (cause={})", e.getClass().getSimpleName());
+            return false;
         }
     }
 
-    private static void playViaJavaSound(byte[] rawPcm16Mono, int sampleRate) {
+    private static boolean playViaJavaSound(byte[] rawPcm16Mono, int sampleRate) {
         AudioFormat format = new AudioFormat(sampleRate, 16, 1, true, false);
         DataLine.Info info = new DataLine.Info(SourceDataLine.class, format);
         try (SourceDataLine line = (SourceDataLine) AudioSystem.getLine(info)) {
@@ -307,7 +320,10 @@ public class VicTtsService {
             if (!cancelRequested) {
                 line.drain();
             }
-        } catch (Exception ignored) {
+            return true;
+        } catch (Exception e) {
+            VicMod.LOGGER.debug("Java Sound PCM playback failed (cause={})", e.getClass().getSimpleName());
+            return false;
         }
     }
 
