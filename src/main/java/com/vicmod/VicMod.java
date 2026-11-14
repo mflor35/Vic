@@ -16,12 +16,15 @@ import com.vicmod.voice.VicTtsService;
 import com.vicmod.voice.VicVoiceInputService;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.message.v1.ServerMessageEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.passive.AnimalEntity;
+import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.particle.ParticleTypes;
 import net.minecraft.server.MinecraftServer;
@@ -52,11 +55,32 @@ public class VicMod implements ModInitializer {
         ModItems.register();
 
         registerChatListener();
+        registerSingletonEnforcement();
         registerFirstJoinDelivery();
         registerWorldProgressionEvents();
         registerCommands();
 
         LOGGER.info("Vic Mod initialized! Don't forget to smile :)");
+    }
+
+    private void registerSingletonEnforcement() {
+        ServerEntityEvents.ENTITY_LOAD.register((entity, world) -> {
+            if (!VicWorldState.isVicCharacter(entity)) {
+                return;
+            }
+            VicWorldState state = VicWorldState.getServerState(world.getServer());
+            if (!state.tryClaimSingletonVic(world.getServer(), entity)) {
+                PlayerEntity nearest = world.getClosestPlayer(entity, 16.0);
+                if (nearest != null) {
+                    nearest.sendMessage(
+                            Text.literal("[Vic System] ").formatted(Formatting.RED, Formatting.BOLD)
+                                    .append(Text.literal("Only a single Vic character may exist per world!").formatted(Formatting.YELLOW)),
+                            true
+                    );
+                }
+                entity.discard();
+            }
+        });
     }
 
     private void registerChatListener() {
@@ -81,12 +105,16 @@ public class VicMod implements ModInitializer {
                 // Give starter Flashlight
                 player.getInventory().insertStack(new ItemStack(ModItems.FLASHLIGHT));
 
-                if (VicConfig.get().autoSpawnDeliveryBoxOnFirstJoin) {
+                if (VicConfig.get().autoSpawnDeliveryBoxOnFirstJoin
+                        && !state.hasInitialDeliverySpawned()
+                        && !state.hasActiveVicInWorld(server)) {
                     VicBoxEntity box = ModEntities.VIC_BOX.create(overworld);
                     if (box != null) {
                         double bx = player.getX() + player.getRotationVec(1.0f).x * 2.5;
                         double bz = player.getZ() + player.getRotationVec(1.0f).z * 2.5;
                         box.refreshPositionAndAngles(bx, player.getY(), bz, player.getYaw() + 180.0f, 0.0f);
+                        state.markInitialDeliverySpawned();
+                        state.tryClaimSingletonVic(server, box);
                         overworld.spawnEntity(box);
                         player.sendMessage(
                                 Text.literal("[Special Delivery] ").formatted(Formatting.YELLOW, Formatting.BOLD)
@@ -172,28 +200,38 @@ public class VicMod implements ModInitializer {
     public static void awakenVicDemon(MinecraftServer server, ServerWorld overworld, VicWorldState state) {
         state.setDemonAwakened(true);
         VicTtsService.speak("TRIAL PERIOD EXPIRED. THANK YOU FOR USING VIC. DO NOT HIDE ON THE SURFACE.", 3);
-        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+
+        List<ServerPlayerEntity> players = server.getPlayerManager().getPlayerList();
+        for (ServerPlayerEntity player : players) {
             player.sendMessage(
                     Text.literal("<Vic> ").formatted(Formatting.DARK_RED, Formatting.BOLD)
                             .append(Text.literal("TRIAL PERIOD EXPIRED. THANK YOU FOR USING VIC. DO NOT HIDE ON THE SURFACE.").formatted(Formatting.RED)),
                     false
             );
             overworld.playSound(null, player.getBlockPos(), SoundEvents.ENTITY_WARDEN_SONIC_BOOM, SoundCategory.HOSTILE, 1.5f, 0.5f);
+        }
 
-            List<VicEntity> vics = overworld.getEntitiesByClass(VicEntity.class, player.getBoundingBox().expand(96.0), Entity -> true);
-            if (!vics.isEmpty()) {
-                for (VicEntity vic : vics) {
-                    vic.transformIntoDemon(overworld);
-                }
-            } else {
-                VicDemonEntity demon = ModEntities.VIC_DEMON.create(overworld);
-                if (demon != null) {
-                    double angle = overworld.getRandom().nextDouble() * Math.PI * 2.0;
-                    double dx = Math.cos(angle) * 16.0;
-                    double dz = Math.sin(angle) * 16.0;
-                    demon.refreshPositionAndAngles(player.getX() + dx, player.getY(), player.getZ() + dz, 0.0f, 0.0f);
-                    overworld.spawnEntity(demon);
-                }
+        Entity active = state.findActiveVicEntity(server, null);
+        if (active instanceof VicEntity vic && active.getWorld() instanceof ServerWorld vicWorld) {
+            vic.transformIntoDemon(vicWorld);
+        } else if (active instanceof VicBoxEntity box && active.getWorld() instanceof ServerWorld boxWorld) {
+            VicDemonEntity demon = ModEntities.VIC_DEMON.create(boxWorld);
+            if (demon != null) {
+                demon.refreshPositionAndAngles(box.getX(), box.getY(), box.getZ(), box.getYaw(), 0.0f);
+                state.transferSingletonVic(box, demon);
+                boxWorld.spawnEntity(demon);
+            }
+            box.discard();
+        } else if (!(active instanceof VicDemonEntity) && !players.isEmpty()) {
+            ServerPlayerEntity targetPlayer = players.getFirst();
+            VicDemonEntity demon = ModEntities.VIC_DEMON.create(overworld);
+            if (demon != null) {
+                double angle = overworld.getRandom().nextDouble() * Math.PI * 2.0;
+                double dx = Math.cos(angle) * 16.0;
+                double dz = Math.sin(angle) * 16.0;
+                demon.refreshPositionAndAngles(targetPlayer.getX() + dx, targetPlayer.getY(), targetPlayer.getZ() + dz, 0.0f, 0.0f);
+                state.transferSingletonVic(active, demon);
+                overworld.spawnEntity(demon);
             }
         }
     }

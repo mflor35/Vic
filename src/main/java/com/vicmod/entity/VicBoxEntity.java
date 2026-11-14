@@ -71,6 +71,22 @@ public class VicBoxEntity extends MobEntity {
     @Override
     public void tick() {
         super.tick();
+        if (!this.getWorld().isClient && this.getWorld() instanceof ServerWorld serverWorld) {
+            VicWorldState state = VicWorldState.getServerState(serverWorld.getServer());
+            if (!state.tryClaimSingletonVic(serverWorld.getServer(), this)) {
+                PlayerEntity nearest = serverWorld.getClosestPlayer(this, 16.0);
+                if (nearest != null) {
+                    nearest.sendMessage(
+                            Text.literal("[Vic System] ").formatted(Formatting.RED, Formatting.BOLD)
+                                    .append(Text.literal("Only one Vic character is allowed per world!").formatted(Formatting.YELLOW)),
+                            true
+                    );
+                }
+                this.discard();
+                return;
+            }
+        }
+
         if (isUnboxing()) {
             int ticks = getUnboxTicks() + 1;
             this.dataTracker.set(UNBOX_TICKS, ticks);
@@ -96,9 +112,12 @@ public class VicBoxEntity extends MobEntity {
         serverWorld.spawnParticles(ParticleTypes.TOTEM_OF_UNDYING, this.getX(), this.getY() + 0.8, this.getZ(), 35, 0.4, 0.4, 0.4, 0.15);
         serverWorld.playSound(null, this.getBlockPos(), SoundEvents.ENTITY_PLAYER_LEVELUP, SoundCategory.NEUTRAL, 1.0f, 1.2f);
 
+        VicWorldState state = VicWorldState.getServerState(serverWorld.getServer());
         VicEntity vic = ModEntities.VIC.create(serverWorld);
         if (vic != null) {
             vic.refreshPositionAndAngles(this.getX(), this.getY() + 0.6, this.getZ(), this.getYaw(), 0.0f);
+            state.transferSingletonVic(this, vic);
+
             PlayerEntity nearest = serverWorld.getClosestPlayer(this, 32.0);
             if (nearest != null) {
                 vic.setOwnerUuid(nearest.getUuid());
@@ -113,10 +132,19 @@ public class VicBoxEntity extends MobEntity {
             serverWorld.spawnEntity(vic);
         }
 
-        VicWorldState state = VicWorldState.getServerState(serverWorld.getServer());
         state.activateCountdown(serverWorld.getTimeOfDay());
-
         this.discard();
+    }
+
+    @Override
+    public void onRemoved() {
+        super.onRemoved();
+        if (!this.getWorld().isClient && this.getWorld() instanceof ServerWorld serverWorld) {
+            RemovalReason reason = this.getRemovalReason();
+            if (reason == RemovalReason.KILLED || reason == RemovalReason.DISCARDED) {
+                VicWorldState.getServerState(serverWorld.getServer()).releaseSingletonVic(this);
+            }
+        }
     }
 
     @Override

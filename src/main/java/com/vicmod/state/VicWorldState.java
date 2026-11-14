@@ -1,16 +1,23 @@
 package com.vicmod.state;
 
+import com.vicmod.entity.VicBoxEntity;
+import com.vicmod.entity.VicDemonEntity;
+import com.vicmod.entity.VicEntity;
+import net.minecraft.entity.Entity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
 import net.minecraft.nbt.NbtList;
 import net.minecraft.nbt.NbtString;
 import net.minecraft.registry.RegistryWrapper;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.world.ServerWorld;
+import net.minecraft.util.TypeFilter;
 import net.minecraft.world.PersistentState;
 import net.minecraft.world.PersistentStateManager;
 import net.minecraft.world.World;
 
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -22,6 +29,8 @@ public class VicWorldState extends PersistentState {
     private boolean countdownActive = false;
     private long activationTimeTick = 0L;
     private boolean demonAwakened = false;
+    private boolean initialDeliverySpawned = false;
+    private UUID activeVicUuid = null;
     private final Set<UUID> welcomedPlayers = new HashSet<>();
 
     public static Type<VicWorldState> getPersistentStateType() {
@@ -53,6 +62,10 @@ public class VicWorldState extends PersistentState {
         state.countdownActive = nbt.getBoolean("countdownActive");
         state.activationTimeTick = nbt.getLong("activationTimeTick");
         state.demonAwakened = nbt.getBoolean("demonAwakened");
+        state.initialDeliverySpawned = nbt.getBoolean("initialDeliverySpawned");
+        if (nbt.containsUuid("activeVicUuid")) {
+            state.activeVicUuid = nbt.getUuid("activeVicUuid");
+        }
 
         if (nbt.contains("welcomedPlayers", NbtElement.LIST_TYPE)) {
             NbtList list = nbt.getList("welcomedPlayers", NbtElement.STRING_TYPE);
@@ -73,6 +86,10 @@ public class VicWorldState extends PersistentState {
         nbt.putBoolean("countdownActive", countdownActive);
         nbt.putLong("activationTimeTick", activationTimeTick);
         nbt.putBoolean("demonAwakened", demonAwakened);
+        nbt.putBoolean("initialDeliverySpawned", initialDeliverySpawned);
+        if (activeVicUuid != null) {
+            nbt.putUuid("activeVicUuid", activeVicUuid);
+        }
 
         NbtList list = new NbtList();
         for (UUID uuid : welcomedPlayers) {
@@ -80,6 +97,97 @@ public class VicWorldState extends PersistentState {
         }
         nbt.put("welcomedPlayers", list);
         return nbt;
+    }
+
+    public static boolean isVicCharacter(Entity entity) {
+        return entity instanceof VicBoxEntity || entity instanceof VicEntity || entity instanceof VicDemonEntity;
+    }
+
+    /**
+     * Checks if this entity is allowed to exist as the single Vic character in the world.
+     * Returns true if registered as the sole active Vic, or false if another active Vic already exists.
+     */
+    public boolean tryClaimSingletonVic(MinecraftServer server, Entity candidate) {
+        if (candidate == null || !candidate.isAlive()) {
+            return false;
+        }
+        UUID candidateId = candidate.getUuid();
+        if (candidateId.equals(this.activeVicUuid)) {
+            return true;
+        }
+
+        Entity existing = findActiveVicEntity(server, candidateId);
+        if (existing != null) {
+            return false;
+        }
+
+        this.activeVicUuid = candidateId;
+        markDirty();
+        return true;
+    }
+
+    /**
+     * Transfers the singleton slot from oldEntity (e.g. Box or Vic) to newEntity (e.g. Vic or Demon).
+     */
+    public void transferSingletonVic(Entity oldEntity, Entity newEntity) {
+        if (newEntity != null) {
+            this.activeVicUuid = newEntity.getUuid();
+            markDirty();
+        } else if (oldEntity != null && oldEntity.getUuid().equals(this.activeVicUuid)) {
+            this.activeVicUuid = null;
+            markDirty();
+        }
+    }
+
+    public void releaseSingletonVic(Entity entity) {
+        if (entity != null && entity.getUuid().equals(this.activeVicUuid)) {
+            this.activeVicUuid = null;
+            markDirty();
+        }
+    }
+
+    public Entity findActiveVicEntity(MinecraftServer server, UUID ignoreUuid) {
+        if (server == null) return null;
+
+        if (this.activeVicUuid != null && !this.activeVicUuid.equals(ignoreUuid)) {
+            for (ServerWorld world : server.getWorlds()) {
+                Entity e = world.getEntity(this.activeVicUuid);
+                if (e != null && e.isAlive() && !e.isRemoved() && isVicCharacter(e)) {
+                    return e;
+                }
+            }
+        }
+
+        for (ServerWorld world : server.getWorlds()) {
+            List<? extends Entity> found = world.getEntitiesByType(
+                    TypeFilter.instanceOf(Entity.class),
+                    e -> e.isAlive() && !e.isRemoved() && isVicCharacter(e) && !e.getUuid().equals(ignoreUuid)
+            );
+            if (!found.isEmpty()) {
+                Entity first = found.getFirst();
+                this.activeVicUuid = first.getUuid();
+                markDirty();
+                return first;
+            }
+        }
+        return null;
+    }
+
+    public boolean hasActiveVicInWorld(MinecraftServer server) {
+        return findActiveVicEntity(server, null) != null;
+    }
+
+    public boolean hasInitialDeliverySpawned() {
+        return initialDeliverySpawned;
+    }
+
+    public void markInitialDeliverySpawned() {
+        this.initialDeliverySpawned = true;
+        markDirty();
+    }
+
+    public UUID getActiveVicUuid() {
+        return activeVicUuid;
     }
 
     public int getKarma() {

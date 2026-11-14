@@ -1,5 +1,6 @@
 package com.vicmod.entity;
 
+import com.vicmod.state.VicWorldState;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.DoorBlock;
 import net.minecraft.entity.EntityType;
@@ -22,6 +23,8 @@ import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvent;
 import net.minecraft.sound.SoundEvents;
+import net.minecraft.text.Text;
+import net.minecraft.util.Formatting;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 
@@ -74,6 +77,20 @@ public class VicDemonEntity extends HostileEntity {
             this.setClimbingWall(this.horizontalCollision);
 
             if (this.getWorld() instanceof ServerWorld serverWorld) {
+                VicWorldState state = VicWorldState.getServerState(serverWorld.getServer());
+                if (!state.tryClaimSingletonVic(serverWorld.getServer(), this)) {
+                    PlayerEntity nearest = serverWorld.getClosestPlayer(this, 16.0);
+                    if (nearest != null) {
+                        nearest.sendMessage(
+                                Text.literal("[Vic System] ").formatted(Formatting.RED, Formatting.BOLD)
+                                        .append(Text.literal("Only one Vic character is allowed per world!").formatted(Formatting.YELLOW)),
+                                true
+                        );
+                    }
+                    this.discard();
+                    return;
+                }
+
                 // Break nearby wooden doors if chasing a player
                 if (this.getTarget() != null && this.age % 20 == 0) {
                     breakNearbyDoors(serverWorld);
@@ -96,6 +113,17 @@ public class VicDemonEntity extends HostileEntity {
                         this.getZ() + (this.random.nextDouble() - 0.5) * 0.9,
                         0.0, 0.02, 0.0
                 );
+            }
+        }
+    }
+
+    @Override
+    public void onRemoved() {
+        super.onRemoved();
+        if (!this.getWorld().isClient && this.getWorld() instanceof ServerWorld serverWorld) {
+            RemovalReason reason = this.getRemovalReason();
+            if (reason == RemovalReason.KILLED || reason == RemovalReason.DISCARDED) {
+                VicWorldState.getServerState(serverWorld.getServer()).releaseSingletonVic(this);
             }
         }
     }

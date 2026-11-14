@@ -109,6 +109,20 @@ public class VicEntity extends PathAwareEntity {
         super.tick();
 
         if (!this.getWorld().isClient && this.getWorld() instanceof ServerWorld serverWorld) {
+            VicWorldState state = VicWorldState.getServerState(serverWorld.getServer());
+            if (!state.tryClaimSingletonVic(serverWorld.getServer(), this)) {
+                PlayerEntity nearest = serverWorld.getClosestPlayer(this, 16.0);
+                if (nearest != null) {
+                    nearest.sendMessage(
+                            Text.literal("[Vic System] ").formatted(Formatting.RED, Formatting.BOLD)
+                                    .append(Text.literal("Only one Vic character is allowed per world!").formatted(Formatting.YELLOW)),
+                            true
+                    );
+                }
+                this.discard();
+                return;
+            }
+
             PlayerEntity targetPlayer = findTargetPlayer(serverWorld);
             if (targetPlayer != null) {
                 this.getLookControl().lookAt(targetPlayer, 30.0f, 30.0f);
@@ -139,7 +153,6 @@ public class VicEntity extends PathAwareEntity {
             }
 
             if (this.age % 40 == 0) {
-                VicWorldState state = VicWorldState.getServerState(serverWorld.getServer());
                 int stage = state.computeStage(VicConfig.get().countdownDays);
                 if (stage != getCorruptionStage()) {
                     setCorruptionStage(stage);
@@ -167,12 +180,25 @@ public class VicEntity extends PathAwareEntity {
         serverWorld.spawnParticles(ParticleTypes.SCULK_SOUL, this.getX(), this.getY() + 1.0, this.getZ(), 30, 0.5, 0.8, 0.5, 0.05);
         serverWorld.playSound(null, this.getBlockPos(), SoundEvents.ENTITY_WARDEN_ROAR, SoundCategory.HOSTILE, 2.0f, 0.6f);
 
+        VicWorldState state = VicWorldState.getServerState(serverWorld.getServer());
         VicDemonEntity demon = ModEntities.VIC_DEMON.create(serverWorld);
         if (demon != null) {
             demon.refreshPositionAndAngles(this.getX(), this.getY(), this.getZ(), this.getYaw(), this.getPitch());
+            state.transferSingletonVic(this, demon);
             serverWorld.spawnEntity(demon);
         }
         this.discard();
+    }
+
+    @Override
+    public void onRemoved() {
+        super.onRemoved();
+        if (!this.getWorld().isClient && this.getWorld() instanceof ServerWorld serverWorld) {
+            RemovalReason reason = this.getRemovalReason();
+            if (reason == RemovalReason.KILLED || reason == RemovalReason.DISCARDED) {
+                VicWorldState.getServerState(serverWorld.getServer()).releaseSingletonVic(this);
+            }
+        }
     }
 
     private PlayerEntity findTargetPlayer(ServerWorld world) {
@@ -210,7 +236,7 @@ public class VicEntity extends PathAwareEntity {
             int karma = state.getKarma();
             player.sendMessage(
                     Text.literal("[Vic Status] ").formatted(Formatting.GOLD)
-                            .append(Text.literal("Day " + day + "/" + maxDays + " | Karma: " + karma + " | Tip: Chat in game to talk to Vic!").formatted(Formatting.WHITE)),
+                            .append(Text.literal("Day " + day + "/" + maxDays + " | Karma: " + karma + " | Tip: Chat or hold [R] to talk to Vic!").formatted(Formatting.WHITE)),
                     true
             );
         }
