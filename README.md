@@ -9,11 +9,13 @@ A psychological horror & AI companion mod for **Minecraft 1.21.1 (Fabric)** wher
 - **Minecraft**: `1.21.1`
 - **Mod Loader**: [Fabric Loader](https://fabricmc.net/) (`>= 0.16.0`)
 - **Dependencies**: [Fabric API](https://modrinth.com/mod/fabric-api) (`0.102.0+1.21.1`)
-- **Java**: **Java 21**
+- **Java**: [**Java 21**](https://adoptium.net/temurin/releases/?version=21)
 
 ---
 
 ## How to Run & Build
+
+For JDK/IDE setup, development-client instructions, and validation tasks, see [DEVELOPMENT.md](DEVELOPMENT.md).
 
 ### Option A: Run the Development Client (Fastest for testing)
 From the project root directory, run:
