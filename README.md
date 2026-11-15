@@ -93,6 +93,7 @@ Create a new Singleplayer world with **Allow Commands (Cheats) ON**:
 ### 2. Talking to Vic & Karma System
 - Send a message in standard game chat or run `/vic say <message>` while near Vic.
 - Friendly conversation increases your **Karma**; rude messages or attacking Vic decreases Karma and escalates hostility stages faster.
+- Ask Vic for help directly — he can **give items** (food, golden apples, torches, iron) and **build for you**: a **Chest**, a **Furnace**, or an **Iron Wall** (e.g. `/vic say build me a chest`, `make me a furnace`, or "put up an iron wall"). He places them in the open space in front of you and shows a preview before confirming.
 
 ### 3. Commands (`/vic` & `/vicconfig`)
 - `/vicconfig` *(or press `V`)* — Open the in-game Vic Configuration GUI.

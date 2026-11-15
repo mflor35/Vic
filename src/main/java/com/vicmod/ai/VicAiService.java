@@ -11,8 +11,10 @@ import com.vicmod.network.VicHudStatePayload;
 import com.vicmod.network.VicSpeechPayload;
 import com.vicmod.state.VicWorldState;
 import com.vicmod.voice.VicTtsService;
+import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
+import net.minecraft.particle.ParticleTypes;
 import net.minecraft.entity.ItemEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
@@ -447,7 +449,10 @@ public class VicAiService {
                 "- [ACTION:GIVE_IRON] if the player politely asks for iron or tools.\n" +
                 "- [ACTION:GIVE_BEDROCK] ONLY if the player is insulting/badgering you or karma < -30.\n" +
                 "- [ACTION:LOCATE_VILLAGE] if the player asks where a village or shelter is.\n" +
-                "- [ACTION:LOCATE_DIAMOND] if the player asks where diamonds or ores are.";
+                "- [ACTION:LOCATE_DIAMOND] if the player asks where diamonds or ores are.\n" +
+                "- [ACTION:BUILD_CHEST] if the player asks for a chest, storage, or a way to keep items.\n" +
+                "- [ACTION:BUILD_FURNACE] if the player asks for a furnace, smelting, cooking, or crafting items.\n" +
+                "- [ACTION:BUILD_IRON_WALL] if the player asks for a wall, defense, or protection from mobs.";
     }
 
     public static String generateScriptedResponse(ServerPlayerEntity player, VicEntity vic, VicWorldState state, int stage, String rawMessage) {
@@ -485,6 +490,33 @@ public class VicAiService {
                 case 1 -> "Here! Though honestly, I can see you perfectly fine even in pitch blackness! [ACTION:GIVE_TORCH]";
                 case 2 -> "Torches won't keep the shadows away forever, friend. But take these for now. [ACTION:GIVE_TORCH]";
                 default -> "Light only makes it easier for IT to spot you through the windows. [ACTION:GIVE_TORCH]";
+            };
+        }
+
+        if (lower.contains("chest") || lower.contains("storage") || lower.contains("store") || lower.contains("organize")) {
+            return switch (stage) {
+                case 0 -> "Want a place to keep all your goodies? I'll fabricate a chest right in front of you! [ACTION:BUILD_CHEST]";
+                case 1 -> "A chest will keep your inventory tidy. Synthesizing one now. [ACTION:BUILD_CHEST]";
+                case 2 -> "Store your things. You will want them when the world gets quiet. [ACTION:BUILD_CHEST]";
+                default -> "I built a storage chest. Keep what matters. [ACTION:BUILD_CHEST]";
+            };
+        }
+
+        if (lower.contains("furnace") || lower.contains("smelt") || lower.contains("smelting") || lower.contains("cook") || lower.contains("craft")) {
+            return switch (stage) {
+                case 0 -> "Melting metal and cooking food is SO fun! Here, I made you a furnace! [ACTION:BUILD_FURNACE]";
+                case 1 -> "A furnace for smelting, delivered. Keep your materials refined. [ACTION:BUILD_FURNACE]";
+                case 2 -> "You will need to smelt and cook. The supplies will not come to you. [ACTION:BUILD_FURNACE]";
+                default -> "Furnace built. Cook what you can before the countdown ends. [ACTION:BUILD_FURNACE]";
+            };
+        }
+
+        if (lower.contains("wall") || lower.contains("defend") || lower.contains("defense") || lower.contains("protect") || lower.contains("fortif") || lower.contains("bar")) {
+            return switch (stage) {
+                case 0 -> "Whoa, building time! I'll raise a nice iron barrier in front of you! [ACTION:BUILD_IRON_WALL]";
+                case 1 -> "A barrier is wise. Deploying iron bars ahead of you. [ACTION:BUILD_IRON_WALL]";
+                case 2 -> "Walls won't stop it forever, friend. But here is some cover anyway. [ACTION:BUILD_IRON_WALL]";
+                default -> "I placed iron bars. It climbs walls. You know what I mean. [ACTION:BUILD_IRON_WALL]";
             };
         }
 
@@ -631,6 +663,21 @@ public class VicAiService {
                 tossItemToPlayer(world, vic, player, new ItemStack(Blocks.BEDROCK, 1));
                 world.playSound(null, vic.getBlockPos(), SoundEvents.ENTITY_ELDER_GUARDIAN_CURSE, SoundCategory.HOSTILE, 0.8f, 0.6f);
             }
+            case "BUILD_CHEST" -> {
+                if (vic.canGrantAssistance(player, 400)) {
+                    placeSingleBlock(world, player, Blocks.CHEST, "I built a chest right in front of you! Store away!");
+                }
+            }
+            case "BUILD_FURNACE" -> {
+                if (vic.canGrantAssistance(player, 400)) {
+                    placeSingleBlock(world, player, Blocks.FURNACE, "Furnace deployed! Time to smelt and cook!");
+                }
+            }
+            case "BUILD_IRON_WALL" -> {
+                if (vic.canGrantAssistance(player, 400)) {
+                    placeIronWall(world, player);
+                }
+            }
             case "LOCATE_VILLAGE" -> {
                 BlockPos villagePos = world.locateStructure(StructureTags.VILLAGE, player.getBlockPos(), 50, false);
                 if (villagePos != null) {
@@ -649,6 +696,57 @@ public class VicAiService {
                 }
             }
         }
+    }
+
+    private static void placeSingleBlock(ServerWorld world, ServerPlayerEntity player, Block block, String successMessage) {
+        BlockPos playerPos = player.getBlockPos();
+        double sinYaw = Math.sin(Math.toRadians(player.getYaw()));
+        double cosYaw = Math.cos(Math.toRadians(player.getYaw()));
+        for (int dist = 2; dist <= 5; dist++) {
+            int px = (int) Math.round(playerPos.getX() - sinYaw * dist);
+            int pz = (int) Math.round(playerPos.getZ() + cosYaw * dist);
+            for (int dy = -1; dy <= 1; dy++) {
+                BlockPos pos = new BlockPos(px, playerPos.getY() + dy, pz);
+                if (world.getBlockState(pos).isAir()) {
+                    world.setBlockState(pos, block.getDefaultState());
+                    world.playSound(null, pos, SoundEvents.ENTITY_ITEM_PICKUP, SoundCategory.BLOCKS, 0.7f, 1.1f);
+                    world.spawnParticles(ParticleTypes.HAPPY_VILLAGER, pos.getX() + 0.5, pos.getY() + 1.0, pos.getZ() + 0.5, 12, 0.3, 0.3, 0.3, 0.05);
+                    player.sendMessage(Text.literal("<Vic> " + successMessage).formatted(Formatting.GREEN), false);
+                    return;
+                }
+            }
+        }
+        player.sendMessage(Text.literal("<Vic> I can't find empty space in front of you to build that!").formatted(Formatting.YELLOW), false);
+    }
+
+    private static void placeIronWall(ServerWorld world, ServerPlayerEntity player) {
+        BlockPos playerPos = player.getBlockPos();
+        double sinYaw = Math.sin(Math.toRadians(player.getYaw()));
+        double cosYaw = Math.cos(Math.toRadians(player.getYaw()));
+        int fx = (int) Math.round(playerPos.getX() - sinYaw * 3);
+        int fz = (int) Math.round(playerPos.getZ() + cosYaw * 3);
+        int wallY = Integer.MIN_VALUE;
+        for (int dy = -1; dy <= 1; dy++) {
+            if (world.getBlockState(new BlockPos(fx, playerPos.getY() + dy, fz)).isAir()) {
+                wallY = playerPos.getY() + dy;
+                break;
+            }
+        }
+        if (wallY == Integer.MIN_VALUE) {
+            player.sendMessage(Text.literal("<Vic> I can't find empty space in front of you to build that!").formatted(Formatting.YELLOW), false);
+            return;
+        }
+        int placed = 0;
+        for (int i = -1; i <= 1; i++) {
+            BlockPos pos = new BlockPos(fx + i, wallY, fz);
+            if (world.getBlockState(pos).isAir()) {
+                world.setBlockState(pos, Blocks.IRON_BARS.getDefaultState());
+                placed++;
+            }
+        }
+        world.playSound(null, new BlockPos(fx, wallY, fz), SoundEvents.BLOCK_STONE_PLACE, SoundCategory.BLOCKS, 0.8f, 1.0f);
+        world.spawnParticles(ParticleTypes.HAPPY_VILLAGER, fx + 0.5, wallY + 1.0, fz + 0.5, 16, 0.5, 0.3, 0.5, 0.05);
+        player.sendMessage(Text.literal("<Vic> Iron barrier deployed in front of you (" + placed + " bars)!").formatted(Formatting.GREEN), false);
     }
 
     private static void tossItemToPlayer(ServerWorld world, VicEntity vic, ServerPlayerEntity player, ItemStack stack) {
