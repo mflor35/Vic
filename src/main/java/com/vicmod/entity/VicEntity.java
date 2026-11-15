@@ -1,6 +1,7 @@
 package com.vicmod.entity;
 
 import com.vicmod.config.VicConfig;
+import com.vicmod.network.VicHudStatePayload;
 import com.vicmod.registry.ModEntities;
 import com.vicmod.state.VicWorldState;
 import net.minecraft.entity.EntityType;
@@ -226,6 +227,7 @@ public class VicEntity extends PathAwareEntity {
                     stack.decrement(1);
                 }
                 state.addKarma(8);
+                VicHudStatePayload.broadcast(serverWorld.getServer(), state);
                 serverWorld.spawnParticles(ParticleTypes.HEART, this.getX(), this.getY() + 0.8, this.getZ(), 5, 0.3, 0.3, 0.3, 0.05);
                 player.sendMessage(Text.literal("<Vic> Aww, for me?! You really are the best friend a sphere could ask for!").formatted(Formatting.YELLOW), false);
                 return ActionResult.SUCCESS;
@@ -251,6 +253,7 @@ public class VicEntity extends PathAwareEntity {
                 state.addKarma(-12);
                 int stage = state.computeStage(VicConfig.get().countdownDays);
                 setCorruptionStage(stage);
+                VicHudStatePayload.broadcast(serverWorld.getServer(), state);
 
                 String reaction = switch (stage) {
                     case 0 -> "Ow! Hey, why did you hit me?! I'm just trying to help you!";

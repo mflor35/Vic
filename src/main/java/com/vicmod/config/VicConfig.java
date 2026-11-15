@@ -55,6 +55,10 @@ public class VicConfig {
     public boolean autoSpawnDeliveryBoxOnFirstJoin = true;
     public boolean enableWorldDecay = true;
     public boolean enableTrueDarknessDuringNight = true;
+    public boolean enableHudOverlay = true;
+    public boolean enableController = true;
+    public float controllerSensitivity = 8.0f;
+    public float controllerDeadzone = 0.18f;
     public int requestTimeoutSeconds = 20;
 
     public String getEffectiveProvider() {

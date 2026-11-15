@@ -9,6 +9,7 @@ import com.vicmod.entity.VicBoxEntity;
 import com.vicmod.entity.VicDemonEntity;
 import com.vicmod.entity.VicEntity;
 import com.vicmod.item.FlashlightItem;
+import com.vicmod.network.VicHudStatePayload;
 import com.vicmod.network.VicSpeechPayload;
 import com.vicmod.registry.ModEntities;
 import com.vicmod.registry.ModItems;
@@ -51,6 +52,7 @@ public class VicMod implements ModInitializer {
     public void onInitialize() {
         VicConfig.load();
         VicSpeechPayload.register();
+        VicHudStatePayload.register();
         VicAiService.ensureLocalOllamaReady();
         ModEntities.register();
         ModItems.register();
@@ -125,6 +127,7 @@ public class VicMod implements ModInitializer {
                     }
                 }
             }
+            VicHudStatePayload.sendTo(player, state);
         });
     }
 
@@ -135,6 +138,10 @@ public class VicMod implements ModInitializer {
     private void onServerTick(MinecraftServer server) {
         ServerWorld overworld = server.getWorld(World.OVERWORLD);
         if (overworld == null) return;
+
+        if (overworld.getTime() % 20 == 0) {
+            VicHudStatePayload.broadcast(server, VicWorldState.getServerState(server));
+        }
 
         // Run progression checks once every 5 seconds (100 ticks)
         if (overworld.getTime() % 100 != 0) return;
@@ -389,6 +396,7 @@ public class VicMod implements ModInitializer {
                                                 VicConfig cfg = VicConfig.get();
                                                 cfg.countdownDays = days;
                                                 VicConfig.save();
+                                                VicHudStatePayload.broadcast(ctx.getSource().getServer(), VicWorldState.getServerState(ctx.getSource().getServer()));
                                                 ctx.getSource().sendFeedback(() -> Text.literal("Vic trial countdown length set to " + days + " days.").formatted(Formatting.GREEN), false);
                                                 return 1;
                                             })))
@@ -421,22 +429,61 @@ public class VicMod implements ModInitializer {
                                                 VicConfig.save();
                                                 ctx.getSource().sendFeedback(() -> Text.literal("Vic Auto-Spawn Delivery Box set to " + enabled).formatted(Formatting.GREEN), false);
                                                 return 1;
+                                            })))
+                            .then(CommandManager.literal("hud")
+                                    .then(CommandManager.argument("enabled", BoolArgumentType.bool())
+                                            .executes(ctx -> {
+                                                boolean enabled = BoolArgumentType.getBool(ctx, "enabled");
+                                                VicConfig cfg = VicConfig.get();
+                                                cfg.enableHudOverlay = enabled;
+                                                VicConfig.save();
+                                                ctx.getSource().sendFeedback(() -> Text.literal("Vic HUD Overlay set to " + enabled).formatted(Formatting.GREEN), false);
+                                                return 1;
+                                            })))
+                            .then(CommandManager.literal("controller")
+                                    .then(CommandManager.argument("enabled", BoolArgumentType.bool())
+                                            .executes(ctx -> {
+                                                boolean enabled = BoolArgumentType.getBool(ctx, "enabled");
+                                                VicConfig cfg = VicConfig.get();
+                                                cfg.enableController = enabled;
+                                                VicConfig.save();
+                                                ctx.getSource().sendFeedback(() -> Text.literal("Vic PS5/Xbox Controller support set to " + enabled).formatted(Formatting.GREEN), false);
+                                                return 1;
                                             }))))
                     .then(CommandManager.literal("setday")
                             .requires(src -> src.hasPermissionLevel(2))
                             .then(CommandManager.argument("day", IntegerArgumentType.integer(1, 30))
                                     .executes(ctx -> {
                                         int day = IntegerArgumentType.getInteger(ctx, "day");
-                                        ServerWorld overworld = ctx.getSource().getServer().getWorld(World.OVERWORLD);
-                                        VicWorldState state = VicWorldState.getServerState(ctx.getSource().getServer());
-                                        state.activateCountdown(overworld.getTimeOfDay() - (day - 1) * 24000L);
-                                        state.setCurrentDay(day);
+                                        MinecraftServer server = ctx.getSource().getServer();
+                                        ServerWorld overworld = server.getWorld(World.OVERWORLD);
+                                        VicWorldState state = VicWorldState.getServerState(server);
+                                        state.resetCountdownToDay(day, overworld.getTimeOfDay());
+                                        boolean restoredVic = false;
                                         if (day > VicConfig.get().countdownDays) {
-                                            awakenVicDemon(ctx.getSource().getServer(), overworld, state);
-                                        } else {
-                                            state.setDemonAwakened(false);
+                                            awakenVicDemon(server, overworld, state);
+                                        } else if (state.findActiveVicEntity(server, null) instanceof VicDemonEntity demon
+                                                && demon.getWorld() instanceof ServerWorld demonWorld) {
+                                            VicEntity vic = ModEntities.VIC.create(demonWorld);
+                                            if (vic != null) {
+                                                vic.refreshPositionAndAngles(
+                                                        demon.getX(), demon.getY(), demon.getZ(), demon.getYaw(), demon.getPitch()
+                                                );
+                                                vic.setCorruptionStage(state.computeStage(VicConfig.get().countdownDays));
+                                                PlayerEntity nearestPlayer = demonWorld.getClosestPlayer(demon, 64.0);
+                                                if (nearestPlayer != null) {
+                                                    vic.setOwnerUuid(nearestPlayer.getUuid());
+                                                }
+                                                state.transferSingletonVic(demon, vic);
+                                                demonWorld.spawnEntity(vic);
+                                                demon.discard();
+                                                restoredVic = true;
+                                            }
                                         }
-                                        ctx.getSource().sendFeedback(() -> Text.literal("Vic countdown set to Day " + day).formatted(Formatting.GREEN), true);
+                                        VicHudStatePayload.broadcast(server, state);
+                                        String feedback = "Vic countdown reset to Day " + day
+                                                + (restoredVic ? "; Vic has returned." : ".");
+                                        ctx.getSource().sendFeedback(() -> Text.literal(feedback).formatted(Formatting.GREEN), true);
                                         return 1;
                                     })))
                     .then(CommandManager.literal("setkarma")
@@ -444,8 +491,10 @@ public class VicMod implements ModInitializer {
                             .then(CommandManager.argument("karma", IntegerArgumentType.integer(-100, 100))
                                     .executes(ctx -> {
                                         int karma = IntegerArgumentType.getInteger(ctx, "karma");
-                                        VicWorldState state = VicWorldState.getServerState(ctx.getSource().getServer());
+                                        MinecraftServer server = ctx.getSource().getServer();
+                                        VicWorldState state = VicWorldState.getServerState(server);
                                         state.setKarma(karma);
+                                        VicHudStatePayload.broadcast(server, state);
                                         ctx.getSource().sendFeedback(() -> Text.literal("Vic Karma set to " + karma).formatted(Formatting.GREEN), true);
                                         return 1;
                                     })))

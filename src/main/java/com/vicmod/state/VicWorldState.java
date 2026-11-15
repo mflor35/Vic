@@ -213,6 +213,14 @@ public class VicWorldState extends PersistentState {
         markDirty();
     }
 
+    public void resetCountdownToDay(int day, long currentWorldTick) {
+        this.currentDay = Math.max(1, day);
+        this.countdownActive = true;
+        this.activationTimeTick = currentWorldTick - (this.currentDay - 1L) * 24000L;
+        this.demonAwakened = false;
+        markDirty();
+    }
+
     public boolean isCountdownActive() {
         return countdownActive;
     }

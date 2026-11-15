@@ -7,6 +7,7 @@ import com.google.gson.JsonParser;
 import com.vicmod.VicMod;
 import com.vicmod.config.VicConfig;
 import com.vicmod.entity.VicEntity;
+import com.vicmod.network.VicHudStatePayload;
 import com.vicmod.network.VicSpeechPayload;
 import com.vicmod.state.VicWorldState;
 import com.vicmod.voice.VicTtsService;
@@ -132,6 +133,7 @@ public class VicAiService {
 
         int stage = state.computeStage(config.countdownDays);
         vic.setCorruptionStage(stage);
+        VicHudStatePayload.broadcast(world.getServer(), state);
 
         String provider = config.getEffectiveProvider();
         if ("OLLAMA".equals(provider)) {

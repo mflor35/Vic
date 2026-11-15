@@ -2,6 +2,7 @@ package com.vicmod.entity;
 
 import com.vicmod.registry.ModEntities;
 import com.vicmod.state.VicWorldState;
+import com.vicmod.network.VicHudStatePayload;
 import com.vicmod.network.VicSpeechPayload;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.attribute.DefaultAttributeContainer;
@@ -136,6 +137,7 @@ public class VicBoxEntity extends MobEntity {
         }
 
         state.activateCountdown(serverWorld.getTimeOfDay());
+        VicHudStatePayload.broadcast(serverWorld.getServer(), state);
         this.discard();
     }
 

@@ -3,6 +3,8 @@ package com.vicmod.client;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.vicmod.VicMod;
 import com.vicmod.client.gui.VicConfigScreen;
+import com.vicmod.client.gui.VicHudOverlay;
+import com.vicmod.client.input.VicControllerService;
 import com.vicmod.client.model.VicBoxEntityModel;
 import com.vicmod.client.model.VicDemonEntityModel;
 import com.vicmod.client.model.VicEntityModel;
@@ -10,6 +12,7 @@ import com.vicmod.client.render.VicBoxEntityRenderer;
 import com.vicmod.client.render.VicDemonEntityRenderer;
 import com.vicmod.client.render.VicEntityRenderer;
 import com.vicmod.config.VicConfig;
+import com.vicmod.network.VicHudStatePayload;
 import com.vicmod.network.VicSpeechPayload;
 import com.vicmod.registry.ModEntities;
 import com.vicmod.voice.VicVoiceInputService;
@@ -19,9 +22,11 @@ import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.rendering.v1.EntityModelLayerRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
+import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.render.entity.model.EntityModelLayer;
@@ -70,6 +75,7 @@ public class VicModClient implements ClientModInitializer {
                 client.setScreen(new VicConfigScreen(client.currentScreen));
             }
 
+            VicControllerService.tick(client);
             handlePushToTalkTick(client);
         });
 
@@ -95,6 +101,14 @@ public class VicModClient implements ClientModInitializer {
 
         ClientPlayNetworking.registerGlobalReceiver(VicSpeechPayload.ID, (payload, context) ->
             VicTtsService.speak(payload.text(), payload.stage()));
+
+        ClientPlayNetworking.registerGlobalReceiver(VicHudStatePayload.ID, (payload, context) ->
+            context.client().execute(() -> VicHudOverlay.updateState(payload)));
+
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) ->
+            client.execute(VicHudOverlay::reset));
+
+        HudRenderCallback.EVENT.register(VicHudOverlay::render);
     }
 
     private void handlePushToTalkTick(MinecraftClient client) {
@@ -106,7 +120,7 @@ public class VicModClient implements ClientModInitializer {
             return;
         }
 
-        boolean pressed = voicePttKey.isPressed();
+        boolean pressed = voicePttKey.isPressed() || VicControllerService.isDpadVoiceHeld();
         if (pressed && !wasVoiceKeyHeld) {
             wasVoiceKeyHeld = true;
             if ("OFF".equals(VicConfig.get().getEffectiveSttMode())) {
@@ -121,9 +135,10 @@ public class VicModClient implements ClientModInitializer {
                 client.player.playSound(SoundEvents.BLOCK_NOTE_BLOCK_CHIME.value(), 0.5f, 1.5f);
             }
         } else if (pressed && VicVoiceInputService.isRecording()) {
+            String releaseHint = VicControllerService.isControllerConnected() ? "[R / D-Pad Up]" : "[R]";
             client.player.sendMessage(
                     Text.literal("● REC ").formatted(Formatting.RED, Formatting.BOLD)
-                            .append(Text.literal("Listening... Release [R] to send to Vic").formatted(Formatting.YELLOW)),
+                            .append(Text.literal("Listening... Release " + releaseHint + " to send to Vic").formatted(Formatting.YELLOW)),
                     true
             );
         } else if (!pressed && wasVoiceKeyHeld) {

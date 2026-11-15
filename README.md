@@ -61,9 +61,23 @@ You can also manage Ollama models directly from chat:
   - **`SHERPA`** runs Piper neural TTS in-process with Sherpa-ONNX and a bundled 78 MB English voice model and pronunciation lexicon. It extracts these to `config/vic/tts/` on first use; the mod jar includes native runtimes for Linux, macOS, and Windows x64/ARM64. The voice is trained on LibriTTS-R (CC BY 4.0; attribution is included in the mod resources). Server replies send text and stage to each target player's client, so speech plays locally in multiplayer. If Sherpa cannot initialize, Vic tries the external Piper CLI, system TTS (`espeak-ng`/`spd-say`/`say`), then the built-in **Formant Synth (`SYNTH`)**.
   - **`PIPER`** remains available for an external Piper CLI and a separately installed voice model. Also supports **Remote API TTS (`OPENAI_TTS`)** (`/v1/audio/speech`). Test or change TTS in the **`V`** Config Menu (click **`Test`** to cycle stages); set the OpenAI-compatible TTS voice there as well. You can also use `/vic tts test [0-3]` and `/vic tts <sherpa|piper|local|synth|system|openai_tts|off>`.
 - **Microphone Voice Input (Push-to-Talk)** *(Default: `SHERPA`)*:
-  - **Hold `R`** in-game to record your voice and release **`R`** to transcribe and send your message directly to Vic (rebindable under *Options -> Controls -> Key Binds -> Vic Mod*).
+  - **Hold `R`** (or **Hold `D-Pad Up`** on a PS5/Xbox controller) in-game to record your voice and release it to transcribe and send your message directly to Vic (rebindable under *Options -> Controls -> Key Binds -> Vic Mod*).
   - Or run `/viclisten [seconds]` in chat to record for a fixed duration using your client microphone. Transcribed requests go privately to Vic through `/vic say`, not to public chat.
   - Defaults to **`SHERPA`**, which uses the bundled, offline English Zipformer-small model through Sherpa-ONNX. The model is Apache-2.0 licensed and is extracted to `config/vic/stt/` on first use. **`LOCAL_CLI`** is also fully local; **`AUTO`** tries Sherpa, then an installed local CLI, then the configured Whisper API fallback (audio may be sent remotely).
+
+### 4. PS5 DualSense & Xbox Controller Support
+Connect a **PS5 DualSense** or **Xbox Controller** (USB or Bluetooth) and it is automatically detected in-game:
+- **Left Stick / Right Stick**: Movement & smooth camera look (`L3` = Sprint toggle, `R3` = Sneak toggle).
+- **R2 / RT**: Attack / Mine | **L2 / LT**: Use Item / Unbox Vic / Toggle Flashlight.
+- **L1 / LB & R1 / RB**: Cycle Hotbar slots.
+- **Cross (PS5) / A (Xbox)**: Jump (or click buttons in menus).
+- **Circle (PS5) / B (Xbox)**: Drop item (or close open menus).
+- **Square (PS5) / X (Xbox)** or **D-Pad Down**: Quick-equip & toggle **Flashlight** (`vic:flashlight`) from hotbar/hands.
+- **Triangle (PS5) / Y (Xbox)**: Open Inventory.
+- **D-Pad Up (Hold)**: **Push-to-Talk Voice Input** to Vic.
+- **D-Pad Right** or **Create / Back**: Open **Vic Config Screen**.
+- **D-Pad Left**: Toggle Camera Perspective (`F5`).
+- Toggle controller support anytime via `/vic config controller <true|false>`.
 
 ---
 
@@ -74,6 +88,7 @@ Create a new Singleplayer world with **Allow Commands (Cheats) ON**:
 ### 1. First-Join Delivery & Box Unsealing
 - When joining a world for the first time, you automatically receive a **Flashlight** (`vic:flashlight`) and a yellow delivery package (`vic:vic_box`) spawns directly in front of you.
 - **Right-click** the box to unseal it, spawning **Vic** (`vic:vic`) and beginning the 5-day trial countdown.
+- A live **Day & Karma HUD panel** in the top-left corner of your screen tracks the current **Day**, **Stage**, and a visual **Karma meter bar (`-100` to `+100`)** in real time (toggleable via `/vic config hud <true|false>`).
 
 ### 2. Talking to Vic & Karma System
 - Send a message in standard game chat or run `/vic say <message>` while near Vic.
@@ -89,6 +104,7 @@ Create a new Singleplayer world with **Allow Commands (Cheats) ON**:
 - `/vic config <countdownDays|worldDecay|trueDarkness|autoSpawnBox> <value>` — Update gameplay settings via command.
 - `/vic setkarma <value>` *(OP level 2)* — Set Karma between `-100` and `100` to test different behavioral stages.
 - `/vic setday <day>` *(OP level 2)* — Jump to a specific day (`1`–`30`):
+  - `/vic setday 1` — Reset the trial countdown to Day 1; if the Vic Demon is active, restore Vic.
   - `/vic setday 3` — Test Stage 2+ world decay (wildlife vanishing, stalking behavior, and true darkness at night).
   - `/vic setday 6` — Immediately expire the 5-day trial and trigger the **Vic Demon** (`vic:vic_demon`) awakening.
 - `/vic apikey <key>` — Save and enable an API key for OpenAI/Groq chat responses.
