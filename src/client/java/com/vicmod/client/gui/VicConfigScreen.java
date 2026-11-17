@@ -2,6 +2,7 @@ package com.vicmod.client.gui;
 
 import com.vicmod.ai.VicAiService;
 import com.vicmod.config.VicConfig;
+import com.vicmod.config.VicPersona;
 import com.vicmod.voice.VicTtsService;
 import com.vicmod.voice.VicVoiceInputService;
 import net.minecraft.client.MinecraftClient;
@@ -21,6 +22,7 @@ public class VicConfigScreen extends Screen {
     private String aiProvider;
     private String ttsMode;
     private String sttMode;
+    private VicPersona vicPersona;
     private int countdownDays;
     private boolean autoSpawnBox;
     private boolean enableWorldDecay;
@@ -44,6 +46,7 @@ public class VicConfigScreen extends Screen {
     private ButtonWidget testMicButton;
 
     private ButtonWidget daysButton;
+    private ButtonWidget personaButton;
     private ButtonWidget autoSpawnButton;
     private ButtonWidget worldDecayButton;
     private ButtonWidget trueDarknessButton;
@@ -62,6 +65,7 @@ public class VicConfigScreen extends Screen {
         this.aiProvider = cfg.getEffectiveProvider();
         this.ttsMode = cfg.getEffectiveTtsMode();
         this.sttMode = cfg.getEffectiveSttMode();
+        this.vicPersona = cfg.getEffectivePersona();
         this.countdownDays = cfg.countdownDays;
         this.autoSpawnBox = cfg.autoSpawnDeliveryBoxOnFirstJoin;
         this.enableWorldDecay = cfg.enableWorldDecay;
@@ -212,13 +216,13 @@ public class VicConfigScreen extends Screen {
         }).dimensions(leftColX, y, 150, 20).build();
         this.addDrawableChild(this.daysButton);
 
-        this.autoSpawnButton = ButtonWidget.builder(getToggleText("Auto-Spawn Box", this.autoSpawnBox), btn -> {
-            this.autoSpawnBox = !this.autoSpawnBox;
-            btn.setMessage(getToggleText("Auto-Spawn Box", this.autoSpawnBox));
+        this.personaButton = ButtonWidget.builder(getPersonaButtonText(), btn -> {
+            this.vicPersona = this.vicPersona.next();
+            btn.setMessage(getPersonaButtonText());
         }).dimensions(rightColX, y, 150, 20).build();
-        this.addDrawableChild(this.autoSpawnButton);
+        this.addDrawableChild(this.personaButton);
 
-        y += 24;
+        y += 22;
 
         this.worldDecayButton = ButtonWidget.builder(getToggleText("World Decay", this.enableWorldDecay), btn -> {
             this.enableWorldDecay = !this.enableWorldDecay;
@@ -337,6 +341,10 @@ public class VicConfigScreen extends Screen {
         return Text.literal("Trial Length: ").append(Text.literal(this.countdownDays + " Days").formatted(Formatting.YELLOW));
     }
 
+    private Text getPersonaButtonText() {
+        return Text.literal("Persona: ").append(Text.literal(this.vicPersona.getDisplayName()).formatted(this.vicPersona.getChatFormatting(), Formatting.BOLD));
+    }
+
     private Text getToggleText(String name, boolean enabled) {
         return Text.literal(name + ": ").append(
                 Text.literal(enabled ? "ON" : "OFF").formatted(enabled ? Formatting.GREEN : Formatting.RED, Formatting.BOLD)
@@ -348,6 +356,7 @@ public class VicConfigScreen extends Screen {
         cfg.setProvider(this.aiProvider);
         cfg.setTtsMode(this.ttsMode);
         cfg.setSttMode(this.sttMode);
+        cfg.setPersona(this.vicPersona.getId());
         cfg.ollamaUrl = this.ollamaUrlField.getText().trim();
         cfg.ollamaModel = this.ollamaModelField.getText().trim();
         cfg.apiEndpoint = this.apiEndpointField.getText().trim();
@@ -366,11 +375,14 @@ public class VicConfigScreen extends Screen {
         VicConfig.save();
 
         if (this.client != null && this.client.player != null) {
+            if (this.client.player.networkHandler != null) {
+                this.client.player.networkHandler.sendChatCommand("vic color " + this.vicPersona.getId().toLowerCase());
+            }
             this.client.player.sendMessage(
                     Text.literal("[Vic Config] ").formatted(Formatting.YELLOW, Formatting.BOLD)
-                            .append(Text.literal("Saved! AI=" + cfg.getEffectiveProvider()
-                                    + ", TTS=" + cfg.getEffectiveTtsMode()
-                                    + ", Mic=" + cfg.getEffectiveSttMode()).formatted(Formatting.GREEN)),
+                            .append(Text.literal("Saved! Persona=" + this.vicPersona.getDisplayName()
+                                    + ", AI=" + cfg.getEffectiveProvider()
+                                    + ", TTS=" + cfg.getEffectiveTtsMode()).formatted(Formatting.GREEN)),
                     true
             );
         }

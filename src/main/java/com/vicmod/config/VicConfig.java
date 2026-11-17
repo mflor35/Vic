@@ -1,3 +1,4 @@
+import com.vicmod.config.VicConfigManager;
 package com.vicmod.config;
 
 import com.google.gson.Gson;
@@ -50,7 +51,9 @@ public class VicConfig {
     public String sttApiKey = "";
     public String localSttCommand = "";
 
-    // Gameplay settings
+    // Gameplay & Personality settings
+    // vicPersona: "YELLOW" (Cheerful), "BLUE" (Liar), "GREEN" (Innocent), "PINK" (Loving), "PURPLE" (Cynic)
+    public String vicPersona = "YELLOW";
     public int countdownDays = 5;
     public boolean autoSpawnDeliveryBoxOnFirstJoin = true;
     public boolean enableWorldDecay = true;
@@ -151,6 +154,14 @@ public class VicConfig {
             return apiKey.trim();
         }
         return "";
+    }
+
+    public VicPersona getEffectivePersona() {
+        return VicPersona.fromString(this.vicPersona);
+    }
+
+    public void setPersona(String persona) {
+        this.vicPersona = VicPersona.fromString(persona).getId();
     }
 
     public static VicConfig get() {

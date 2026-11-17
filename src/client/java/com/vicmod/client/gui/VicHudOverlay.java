@@ -2,6 +2,7 @@ package com.vicmod.client.gui;
 
 import com.vicmod.client.input.VicControllerService;
 import com.vicmod.config.VicConfig;
+import com.vicmod.config.VicPersona;
 import com.vicmod.network.VicHudStatePayload;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
@@ -59,10 +60,11 @@ public class VicHudOverlay {
         int boxWidth = 148;
         int boxHeight = hasPad ? 52 : 40;
 
+        VicPersona persona = VicConfig.get().getEffectivePersona();
+        int personaHex = persona.getHexColor();
         int borderColor = switch (displayStage) {
             case 5 -> 0xCC55FF55;
-            case 0 -> 0xCCFFE135;
-            case 1 -> 0xCCFFAA00;
+            case 0, 1 -> 0xCC000000 | personaHex;
             case 2 -> 0xCCFF5555;
             case 3 -> 0xCCAA0000;
             default -> 0xFFFF1111;
@@ -85,11 +87,11 @@ public class VicHudOverlay {
             dayLabel = "DAY " + displayDay + "/" + displayMaxDays + " [EXPIRED]";
             dayColor = 0xFF5555;
         } else if (countdownActive) {
-            dayLabel = "Day " + displayDay + " / " + displayMaxDays;
-            dayColor = displayStage >= 2 ? 0xFFAA00 : 0xFFE135;
+            dayLabel = "Day " + displayDay + "/" + displayMaxDays + " [" + persona.getShortLabel() + "]";
+            dayColor = displayStage >= 2 ? 0xFFAA00 : personaHex;
         } else {
-            dayLabel = "Day " + displayDay + " / " + displayMaxDays + " (Sealed)";
-            dayColor = 0xCCCCCC;
+            dayLabel = "Day " + displayDay + "/" + displayMaxDays + " [" + persona.getShortLabel() + "]";
+            dayColor = personaHex;
         }
 
         String faceBadge = switch (displayStage) {

@@ -1,3 +1,4 @@
+import com.vicmod.config.VicConfigManager;
 package com.vicmod;
 
 import com.mojang.brigadier.arguments.BoolArgumentType;
@@ -5,6 +6,7 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.vicmod.ai.VicAiService;
 import com.vicmod.config.VicConfig;
+import com.vicmod.config.VicPersona;
 import com.vicmod.entity.VicBoxEntity;
 import com.vicmod.entity.VicDemonEntity;
 import com.vicmod.entity.VicEntity;
@@ -265,6 +267,7 @@ public class VicMod implements ModInitializer {
                                                 "Countdown Active: " + state.isCountdownActive() + "\n" +
                                                 "Day: " + state.getCurrentDay() + " / " + cfg.countdownDays + "\n" +
                                                 "Karma: " + state.getKarma() + " (Stage " + stage + ")\n" +
+                                                "Persona: " + cfg.getEffectivePersona().getDisplayName() + "\n" +
                                                 "Demon Awakened: " + state.isDemonAwakened() + " | Defeated: " + state.isDemonDefeated() + "\n" +
                                                 "Conversation Memory: " + state.getConversationMemory().size() + " / " + VicWorldState.MAX_MEMORY_TURNS + " turns\n" +
                                                 "AI Provider: " + provider + " (" + activeModel + ")\n" +
@@ -318,6 +321,18 @@ public class VicMod implements ModInitializer {
                                         String msg = StringArgumentType.getString(ctx, "message");
                                         VicAiService.handlePlayerMessage(player, msg);
                                         return 1;
+                                    })))
+                    .then(CommandManager.literal("color")
+                            .then(CommandManager.argument("persona", StringArgumentType.word())
+                                    .executes(ctx -> {
+                                        String raw = StringArgumentType.getString(ctx, "persona");
+                                        return applyPersonaCommand(ctx.getSource(), raw);
+                                    })))
+                    .then(CommandManager.literal("personality")
+                            .then(CommandManager.argument("persona", StringArgumentType.word())
+                                    .executes(ctx -> {
+                                        String raw = StringArgumentType.getString(ctx, "persona");
+                                        return applyPersonaCommand(ctx.getSource(), raw);
                                     })))
                     .then(CommandManager.literal("ollama")
                             .then(CommandManager.literal("list")
@@ -512,6 +527,29 @@ public class VicMod implements ModInitializer {
                                     })))
             );
         });
+    }
+
+    private int applyPersonaCommand(net.minecraft.server.command.ServerCommandSource source, String rawPersona) {
+        VicPersona persona = VicPersona.fromString(rawPersona);
+        VicConfig cfg = VicConfig.get();
+        cfg.setPersona(persona.getId());
+        VicConfig.save();
+
+        MinecraftServer server = source.getServer();
+        VicWorldState state = VicWorldState.getServerState(server);
+        Entity active = state.findActiveVicEntity(server, null);
+        if (active instanceof VicEntity vic) {
+            vic.setPersona(persona);
+            ServerPlayerEntity player = source.getPlayer();
+            if (player != null) {
+                VicAiService.deliverDirectLine(player, vic, vic.getCorruptionStage(), persona.getDyeReactionLine());
+            }
+        }
+
+        source.sendFeedback(() -> Text.literal("Vic color & personality set to: ")
+                .formatted(Formatting.WHITE)
+                .append(Text.literal(persona.getDisplayName()).formatted(persona.getChatFormatting(), Formatting.BOLD)), false);
+        return 1;
     }
 
 }

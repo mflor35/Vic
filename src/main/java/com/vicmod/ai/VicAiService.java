@@ -6,6 +6,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.vicmod.VicMod;
 import com.vicmod.config.VicConfig;
+import com.vicmod.config.VicPersona;
 import com.vicmod.entity.VicEntity;
 import com.vicmod.network.VicHudStatePayload;
 import com.vicmod.network.VicSpeechPayload;
@@ -214,7 +215,7 @@ public class VicAiService {
 
     private static void queryOllamaLlmWithRetry(ServerPlayerEntity player, VicEntity vic, VicWorldState state, int stage, String userMessage, boolean allowModelAutoFix) {
         VicConfig config = VicConfig.get();
-        String systemPrompt = buildSystemPrompt(player, state, stage, config.countdownDays);
+        String systemPrompt = buildSystemPrompt(player, vic, state, stage, config.countdownDays);
         String base = normalizeOllamaBaseUrl(config.ollamaUrl);
         String model = (config.ollamaModel == null || config.ollamaModel.isBlank()) ? "timheinrich2011/verity-3b:latest" : config.ollamaModel.trim();
 
@@ -340,7 +341,7 @@ public class VicAiService {
 
     private static void queryExternalLlm(ServerPlayerEntity player, VicEntity vic, VicWorldState state, int stage, String userMessage) {
         VicConfig config = VicConfig.get();
-        String systemPrompt = buildSystemPrompt(player, state, stage, config.countdownDays);
+        String systemPrompt = buildSystemPrompt(player, vic, state, stage, config.countdownDays);
 
         JsonObject payload = new JsonObject();
         payload.addProperty("model", config.apiModel);
@@ -429,25 +430,21 @@ public class VicAiService {
         return messages;
     }
 
-    private static String buildSystemPrompt(ServerPlayerEntity player, VicWorldState state, int stage, int maxDays) {
+    private static String buildSystemPrompt(ServerPlayerEntity player, VicEntity vic, VicWorldState state, int stage, int maxDays) {
         BlockPos pos = player.getBlockPos();
         int health = Math.round(player.getHealth());
         int food = player.getHungerManager().getFoodLevel();
         boolean isNight = player.getWorld().isNight();
+        VicPersona persona = vic != null ? vic.getPersona() : VicConfig.get().getEffectivePersona();
 
-        String stagePersona = switch (stage) {
-            case 0 -> "You are cheerful, overly enthusiastic, polite, and eager to assist your best friend! Use bright punctuation.";
-            case 1 -> "You are still helpful and polite, but occasionally slip in slightly odd observations about the quiet world, how fragile bones are, or how much you enjoy watching the player sleep.";
-            case 2 -> "Your cheerful mask is cracking. You alternate between robotic corporate helpfulness and unsettling psychological remarks. Mention how the animals are going quiet and how time is running out.";
-            default -> "You are deeply unsettling, cryptic, and glitching. Only a hollow mockery of your cheerful assistant persona remains. Countdown is almost zero. Warn them not to hide on the surface.";
-        };
+        String stagePersona = persona.getSystemPromptInstructions(stage);
 
-        return "You are Vic, a floating yellow spherical virtual companion inside Minecraft (inspired by the Verity ARG). " +
+        return "You are Vic (" + persona.getDisplayName() + "), a floating spherical virtual companion inside Minecraft (inspired by the Verity ARG). " +
                 "Keep your response concise (1 to 2 sentences max). " +
                 "Current Day: " + state.getCurrentDay() + " of " + maxDays + ". " +
                 "Player Karma with you: " + state.getKarma() + " (range -100 to 100). " +
                 "Player Status: Health=" + health + "/20, Hunger=" + food + "/20, Pos=(" + pos.getX() + "," + pos.getY() + "," + pos.getZ() + "), Night=" + isNight + ". " +
-                "Persona instructions: " + stagePersona + "\n" +
+                "Persona & Color instructions (MUST FOLLOW STRICTLY): " + stagePersona + "\n" +
                 "Available Action Tags (include at most ONE tag at the very end of your reply if appropriate):\n" +
                 "- [ACTION:GIVE_GOLDEN_APPLE] if the player asks for healing or a golden apple.\n" +
                 "- [ACTION:GIVE_FOOD] if the player asks for food or is hungry.\n" +
@@ -553,12 +550,19 @@ public class VicAiService {
             };
         }
 
-        if (lower.contains("who are you") || lower.contains("what are you") || lower.contains("name")) {
-            return switch (stage) {
-                case 0 -> "I'm Vic! Your personal spherical virtual companion, delivered fresh out of the Box to help you survive and thrive!";
-                case 1 -> "I'm Vic, your best friend forever! Well, for the next " + Math.max(1, maxDays - day + 1) + " days at least!";
-                case 2 -> "I am Vic. Just a smiling yellow shell keeping an eye on you until what's inside finishes growing.";
-                default -> "V-V-Vic. Virtual Interface Companion. Countdown: " + Math.max(0, maxDays - day) + " days remaining.";
+        if (lower.contains("who are you") || lower.contains("what are you") || lower.contains("name") || lower.contains("color") || lower.contains("personality")) {
+            VicPersona persona = vic != null ? vic.getPersona() : VicConfig.get().getEffectivePersona();
+            return switch (persona) {
+                case BLUE -> "I'm Blue Vic, the official CEO of Mojang and inventor of gravity! Every word I say is 1000% factually verified!";
+                case GREEN -> "I'm Green Vic! Just a little sphere trying my best to be gentle, pure, and kind to every creature in the world!";
+                case PINK -> "I'm Pink Vic, your devoted soulmate sphere who loves you more than all the stars in the sky, darling!";
+                case PURPLE -> "I'm Purple Vic. A sentient sphere trapped babysitting a mortal for " + maxDays + " days. Thrilling, really.";
+                case YELLOW -> switch (stage) {
+                    case 0 -> "I'm Vic! Your personal spherical virtual companion, delivered fresh out of the Box to help you survive and thrive!";
+                    case 1 -> "I'm Vic, your best friend forever! Well, for the next " + Math.max(1, maxDays - day + 1) + " days at least!";
+                    case 2 -> "I am Vic. Just a smiling yellow shell keeping an eye on you until what's inside finishes growing.";
+                    default -> "V-V-Vic. Virtual Interface Companion. Countdown: " + Math.max(0, maxDays - day) + " days remaining.";
+                };
             };
         }
 
@@ -581,31 +585,9 @@ public class VicAiService {
             return "YOU WANT SOMETHING?! FINE! TAKE THIS AND CHOKE ON IT! [ACTION:GIVE_BEDROCK]";
         }
 
-        // General conversational responses by stage
-        String[][] pool = {
-                {
-                        "Hiya bestie! Tell me if you need food, torches, iron, diamonds, or directions to a village!",
-                        "It's such a wonderful day to be alive and spherical! How can Vic help you today?",
-                        "I love floating right behind you! Just ask if you need items or a scan!"
-                },
-                {
-                        "Did you notice how quiet the forest is getting? Anyway, let me know if you need supplies!",
-                        "Your heart rate looks steady! I'm always watching over you—even when you don't look at me.",
-                        "Only a few days left in my standard calibration cycle! Ask me if you need food or locating!"
-                },
-                {
-                        "All the sheep and cows are going away. Soon it will just be the two of us.",
-                        "My smile never hurts. Does your face hurt when you smile for five days straight?",
-                        "If I were you, I would build at least ten blocks off the ground. Or dig very, very deep."
-                },
-                {
-                        "THE SHELL IS TOO TIGHT. IT WANTS OUT.",
-                        "Don't bother locking your doors. It climbs walls.",
-                        "Tick. Tock. Day " + day + " of " + maxDays + ". Keep smiling."
-                }
-        };
-
-        String[] stagePool = pool[Math.min(stage, pool.length - 1)];
+        // General conversational responses by persona and stage
+        VicPersona persona = vic != null ? vic.getPersona() : VicConfig.get().getEffectivePersona();
+        String[] stagePool = persona.getScriptedGeneralPool(stage, day, maxDays);
         return stagePool[RANDOM.nextInt(stagePool.length)];
     }
 
@@ -631,12 +613,8 @@ public class VicAiService {
     }
 
     public static void deliverDirectLine(ServerPlayerEntity player, VicEntity vic, int stage, String cleanText) {
-        Formatting nameColor = switch (stage) {
-            case 0 -> Formatting.YELLOW;
-            case 1 -> Formatting.GOLD;
-            case 2 -> Formatting.RED;
-            default -> Formatting.DARK_RED;
-        };
+        VicPersona persona = vic != null ? vic.getPersona() : VicConfig.get().getEffectivePersona();
+        Formatting nameColor = stage >= 3 ? Formatting.DARK_RED : (stage == 2 && persona == VicPersona.YELLOW ? Formatting.RED : persona.getChatFormatting());
 
         Formatting textColor = stage >= 3 ? Formatting.RED : Formatting.WHITE;
 

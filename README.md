@@ -116,6 +116,12 @@ Create a new Singleplayer world with **Allow Commands (Cheats) ON**:
 
 ### 2. Talking to Vic, Rolling Memory & Item Offerings
 - Send a message in standard game chat or run `/vic say <message>` while near Vic.
+- **Colors & Personalities**: Change Vic's color and personality at any time via the **`V` Config Menu (`Persona` button)**, `/vic color <yellow|blue|green|pink|purple>`, or by **right-clicking Vic with a Dye**:
+  - **Yellow (`YELLOW` — Cheerful)**: Classic overly enthusiastic best friend whose corporate smile slowly cracks.
+  - **Blue (`BLUE` — Compulsive Liar)**: Shameless liar and gaslighter who invents hilarious, blatantly false "facts" about Minecraft.
+  - **Green (`GREEN` — Innocent & Pure)**: Childlike, gentle, and wholesome; apologizes to blocks and begs you to hide when his shell starts cracking.
+  - **Pink (`PINK` — Very Loving)**: Overwhelmingly affectionate, clingy, and devoted (escalating into an obsessive yandere in later stages).
+  - **Purple (`PURPLE` — Cynic)**: Deadpan, sarcastic, and world-weary; roasts your survival skills while begrudgingly helping you.
 - **Rolling Conversation Memory**: Vic remembers your last 8 conversation turns (persisted in world NBT) across both LLM (`Ollama` / `OpenAI`) and scripted modes.
 - **Proactive Event Reactions**: Vic comments dynamically when your health drops critically low (even tossing emergency food in early stages), when night falls, or after long periods of silence.
 - **Physical Item Offerings (Right-Click Vic)**:

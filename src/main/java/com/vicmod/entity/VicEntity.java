@@ -2,6 +2,7 @@ package com.vicmod.entity;
 
 import com.vicmod.ai.VicAiService;
 import com.vicmod.config.VicConfig;
+import com.vicmod.config.VicPersona;
 import com.vicmod.network.VicHudStatePayload;
 import com.vicmod.registry.ModEntities;
 import com.vicmod.state.VicWorldState;
@@ -44,6 +45,7 @@ import java.util.UUID;
 public class VicEntity extends PathAwareEntity {
     private static final TrackedData<Integer> CORRUPTION_STAGE = DataTracker.registerData(VicEntity.class, TrackedDataHandlerRegistry.INTEGER);
     private static final TrackedData<Optional<UUID>> OWNER_UUID = DataTracker.registerData(VicEntity.class, TrackedDataHandlerRegistry.OPTIONAL_UUID);
+    private static final TrackedData<String> PERSONA_COLOR = DataTracker.registerData(VicEntity.class, TrackedDataHandlerRegistry.STRING);
 
     private long lastAssistanceTick = -1000L;
     private long lastConversationTick = 0L;
@@ -78,6 +80,7 @@ public class VicEntity extends PathAwareEntity {
         super.initDataTracker(builder);
         builder.add(CORRUPTION_STAGE, 0);
         builder.add(OWNER_UUID, Optional.empty());
+        builder.add(PERSONA_COLOR, VicConfig.get().getEffectivePersona().getId());
     }
 
     @Override
@@ -92,6 +95,14 @@ public class VicEntity extends PathAwareEntity {
 
     public void setCorruptionStage(int stage) {
         this.dataTracker.set(CORRUPTION_STAGE, Math.max(0, Math.min(4, stage)));
+    }
+
+    public VicPersona getPersona() {
+        return VicPersona.fromString(this.dataTracker.get(PERSONA_COLOR));
+    }
+
+    public void setPersona(VicPersona persona) {
+        this.dataTracker.set(PERSONA_COLOR, (persona != null ? persona : VicPersona.YELLOW).getId());
     }
 
     public void setOwnerUuid(UUID uuid) {
@@ -170,6 +181,13 @@ public class VicEntity extends PathAwareEntity {
 
                 if (this.age % 60 == 0 && targetPlayer instanceof ServerPlayerEntity serverPlayer) {
                     tickProactiveReactions(serverWorld, serverPlayer, state);
+                }
+            }
+
+            if (this.age % 20 == 0) {
+                VicPersona cfgPersona = VicConfig.get().getEffectivePersona();
+                if (cfgPersona != getPersona()) {
+                    setPersona(cfgPersona);
                 }
             }
 
@@ -319,6 +337,20 @@ public class VicEntity extends PathAwareEntity {
     private boolean handleItemOffering(ServerWorld world, ServerPlayerEntity player, VicWorldState state, ItemStack stack) {
         int stage = getCorruptionStage();
 
+        // 0. Dye Offering — Changes Vic's Color & Personality!
+        VicPersona dyePersona = VicPersona.fromDyeItem(stack);
+        if (dyePersona != null) {
+            consumeOffering(player, stack);
+            setPersona(dyePersona);
+            VicConfig.get().setPersona(dyePersona.getId());
+            VicConfig.save();
+            world.spawnParticles(ParticleTypes.WAX_ON, this.getX(), this.getY() + 0.5, this.getZ(), 18, 0.4, 0.4, 0.4, 0.08);
+            world.playSound(null, this.getBlockPos(), SoundEvents.ITEM_DYE_USE, SoundCategory.NEUTRAL, 1.0f, 1.2f);
+            world.playSound(null, this.getBlockPos(), SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME, SoundCategory.NEUTRAL, 1.0f, 1.3f);
+            VicAiService.deliverDirectLine(player, this, stage, dyePersona.getDyeReactionLine());
+            return true;
+        }
+
         // 1. Legendary Offerings (+20 Karma + Buffs)
         if (stack.isOf(Items.ENCHANTED_GOLDEN_APPLE) || stack.isOf(Items.NETHER_STAR)) {
             consumeOffering(player, stack);
@@ -457,6 +489,7 @@ public class VicEntity extends PathAwareEntity {
     public void writeCustomDataToNbt(NbtCompound nbt) {
         super.writeCustomDataToNbt(nbt);
         nbt.putInt("CorruptionStage", getCorruptionStage());
+        nbt.putString("PersonaColor", getPersona().getId());
         UUID owner = getOwnerUuid();
         if (owner != null) {
             nbt.putUuid("OwnerUuid", owner);
@@ -467,6 +500,9 @@ public class VicEntity extends PathAwareEntity {
     public void readCustomDataFromNbt(NbtCompound nbt) {
         super.readCustomDataFromNbt(nbt);
         setCorruptionStage(nbt.getInt("CorruptionStage"));
+        if (nbt.contains("PersonaColor")) {
+            setPersona(VicPersona.fromString(nbt.getString("PersonaColor")));
+        }
         if (nbt.containsUuid("OwnerUuid")) {
             setOwnerUuid(nbt.getUuid("OwnerUuid"));
         }
