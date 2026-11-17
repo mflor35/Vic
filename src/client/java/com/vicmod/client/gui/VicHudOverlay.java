@@ -3,12 +3,16 @@ package com.vicmod.client.gui;
 import com.vicmod.client.input.VicControllerService;
 import com.vicmod.config.VicConfig;
 import com.vicmod.config.VicPersona;
+import com.vicmod.entity.VicEntity;
 import com.vicmod.network.VicHudStatePayload;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.RenderTickCounter;
+import net.minecraft.entity.Entity;
 import net.minecraft.util.math.MathHelper;
+
+import java.util.List;
 
 public class VicHudOverlay {
     private static boolean hasReceivedState = false;
@@ -60,7 +64,7 @@ public class VicHudOverlay {
         int boxWidth = 148;
         int boxHeight = hasPad ? 52 : 40;
 
-        VicPersona persona = VicConfig.get().getEffectivePersona();
+        VicPersona persona = resolveActivePersona(client);
         int personaHex = persona.getHexColor();
         int borderColor = switch (displayStage) {
             case 5 -> 0xCC55FF55;
@@ -175,5 +179,19 @@ public class VicHudOverlay {
             String padHint = padPrefix + ": [D-Up] Mic [D-Dn] Light";
             context.drawTextWithShadow(font, padHint, boxX + 6, boxY + 40, 0x55FFFF);
         }
+    }
+
+    private static VicPersona resolveActivePersona(MinecraftClient client) {
+        if (client.world != null && client.player != null) {
+            List<VicEntity> vics = client.world.getEntitiesByClass(
+                    VicEntity.class,
+                    client.player.getBoundingBox().expand(96.0),
+                    Entity::isAlive
+            );
+            if (!vics.isEmpty()) {
+                return vics.getFirst().getPersona();
+            }
+        }
+        return VicConfig.get().getEffectivePersona();
     }
 }

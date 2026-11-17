@@ -1,4 +1,3 @@
-import com.vicmod.config.VicConfigManager;
 package com.vicmod.config;
 
 import com.google.gson.Gson;

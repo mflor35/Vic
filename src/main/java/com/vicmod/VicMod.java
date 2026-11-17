@@ -1,4 +1,3 @@
-import com.vicmod.config.VicConfigManager;
 package com.vicmod;
 
 import com.mojang.brigadier.arguments.BoolArgumentType;
