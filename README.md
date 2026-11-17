@@ -83,18 +83,24 @@ ollama pull llama3.2:1b     # Recommended for Low-End / Integrated Graphics
   - Or run `/viclisten [seconds]` in chat to record for a fixed duration using your client microphone. Transcribed requests go privately to Vic through `/vic say`, not to public chat.
   - Defaults to **`SHERPA`**, which uses the bundled, offline English Zipformer-small model through Sherpa-ONNX. The model is Apache-2.0 licensed and is extracted to `config/vic/stt/` on first use. **`LOCAL_CLI`** is also fully local; **`AUTO`** tries Sherpa, then an installed local CLI, then the configured Whisper API fallback (audio may be sent remotely).
 
-### 4. PS5 DualSense & Xbox Controller Support
-Connect a **PS5 DualSense** or **Xbox Controller** (USB or Bluetooth) and it is automatically detected in-game:
-- **Left Stick / Right Stick**: Movement & smooth camera look (`L3` = Sprint toggle, `R3` = Sneak toggle).
-- **R2 / RT**: Attack / Mine | **L2 / LT**: Use Item / Unbox Vic / Toggle Flashlight.
-- **L1 / LB & R1 / RB**: Cycle Hotbar slots.
-- **Cross (PS5) / A (Xbox)**: Jump (or click buttons in menus).
-- **Circle (PS5) / B (Xbox)**: Drop item (or close open menus).
-- **Square (PS5) / X (Xbox)** or **D-Pad Down**: Quick-equip & toggle **Flashlight** (`vic:flashlight`) from hotbar/hands.
-- **Triangle (PS5) / Y (Xbox)**: Open Inventory.
-- **D-Pad Up (Hold)**: **Push-to-Talk Voice Input** to Vic.
-- **D-Pad Right** or **Create / Back**: Open **Vic Config Screen**.
-- **D-Pad Left**: Toggle Camera Perspective (`F5`).
+### 4. PS5 DualSense & Xbox Controller Support (`Controlify` / `MidnightControls` + Built-in Mode)
+- **Recommended Controller Mods**: Drop **[Controlify](https://modrinth.com/mod/controlify)** *(plus [YetAnotherConfigLib](https://modrinth.com/mod/yacl))* or **[MidnightControls](https://modrinth.com/mod/midnightcontrols)** for Fabric `1.21.1` into your `mods/` folder (or `run/mods/` when using `./gradlew runClient`).
+  - When **Controlify** or **MidnightControls** is installed, Vic automatically detects it (`FabricLoader.isModLoaded`) and yields movement, camera, radial menus, and inventory snapping to the controller mod so there are zero double-input conflicts.
+  - All three Vic actions are registered as standard Fabric keybindings under the **Vic Mod** category so you can bind them to any controller button or Radial Menu slot inside Controlify / MidnightControls:
+    - **Push to Talk (Speak to Vic)** (`R` / **Hold D-Pad Up**)
+    - **Quick-Toggle Flashlight** (`G` / **D-Pad Down**)
+    - **Open Vic Config Menu** (`V` / **D-Pad Right**)
+- **Built-in Fallback Mode**: Even without an external controller mod installed, connecting a **PS5 DualSense** or **Xbox Controller** (USB or Bluetooth) enables built-in gamepad support:
+  - **Left Stick / Right Stick**: Movement & smooth camera look (`L3` = Sprint toggle, `R3` = Sneak toggle).
+  - **R2 / RT**: Attack / Mine | **L2 / LT**: Use Item / Unbox Vic / Toggle Flashlight.
+  - **L1 / LB & R1 / RB**: Cycle Hotbar slots.
+  - **Cross (PS5) / A (Xbox)**: Jump (or click buttons in menus).
+  - **Circle (PS5) / B (Xbox)**: Drop item (or close open menus).
+  - **Square (PS5) / X (Xbox)** or **D-Pad Down**: Quick-equip & toggle **Flashlight** (`vic:flashlight`) from hotbar/hands.
+  - **Triangle (PS5) / Y (Xbox)**: Open Inventory.
+  - **D-Pad Up (Hold)**: **Push-to-Talk Voice Input** to Vic.
+  - **D-Pad Right** or **Create / Back**: Open **Vic Config Screen**.
+  - **D-Pad Left**: Toggle Camera Perspective (`F5`).
 - Toggle controller support anytime via `/vic config controller <true|false>`.
 
 ---

@@ -3,20 +3,16 @@ package com.vicmod.client.input;
 import com.vicmod.client.gui.VicConfigScreen;
 import com.vicmod.config.VicConfig;
 import com.vicmod.registry.ModItems;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.ChatScreen;
 import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.ItemStack;
-import net.minecraft.sound.SoundEvents;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.hit.EntityHitResult;
-import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.MathHelper;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWGamepadState;
@@ -43,6 +39,9 @@ public class VicControllerService {
         }
     }
 
+    private static Boolean externalControllerModLoaded = null;
+    private static String externalControllerModName = "";
+
     private static int activeJoystickId = -1;
     private static ControllerProfile activeProfile = ControllerProfile.NONE;
     private static String activeControllerName = "";
@@ -54,6 +53,36 @@ public class VicControllerService {
     private static boolean sneakToggled = false;
     private static boolean sprintToggled = false;
     private static boolean dpadUpVoiceHeld = false;
+
+    /**
+     * Checks if a dedicated controller mod (Controlify, MidnightControls, or Controllable) is loaded.
+     * When present, VicControllerService yields movement, camera, and menu navigation to that mod
+     * to prevent double-input conflicts while keeping Vic's voice/flashlight shortcuts active.
+     */
+    public static boolean isExternalControllerModLoaded() {
+        if (externalControllerModLoaded == null) {
+            FabricLoader loader = FabricLoader.getInstance();
+            if (loader.isModLoaded("controlify")) {
+                externalControllerModLoaded = true;
+                externalControllerModName = "Controlify";
+            } else if (loader.isModLoaded("midnightcontrols")) {
+                externalControllerModLoaded = true;
+                externalControllerModName = "MidnightControls";
+            } else if (loader.isModLoaded("controllable")) {
+                externalControllerModLoaded = true;
+                externalControllerModName = "Controllable";
+            } else {
+                externalControllerModLoaded = false;
+                externalControllerModName = "";
+            }
+        }
+        return externalControllerModLoaded;
+    }
+
+    public static String getExternalControllerModName() {
+        isExternalControllerModLoaded();
+        return externalControllerModName;
+    }
 
     public static boolean isControllerConnected() {
         return activeJoystickId != -1 && activeProfile != ControllerProfile.NONE;
@@ -69,10 +98,6 @@ public class VicControllerService {
 
     public static boolean isDpadVoiceHeld() {
         return dpadUpVoiceHeld;
-    }
-
-    public static String getVoiceButtonLabel() {
-        return activeProfile == ControllerProfile.PS5 ? "D-Pad Up (PS5)" : "D-Pad Up";
     }
 
     public static void tick(MinecraftClient client) {
@@ -103,6 +128,28 @@ public class VicControllerService {
             activeJoystickId = -1;
             activeProfile = ControllerProfile.NONE;
             dpadUpVoiceHeld = false;
+            return;
+        }
+
+        // If Controlify or MidnightControls is installed, yield core movement/camera/UI to it
+        // and only provide D-Pad Up Push-to-Talk & D-Pad Right Config Screen shortcuts in-game.
+        if (isExternalControllerModLoaded()) {
+            if (controllerDrivingMovement) {
+                releaseMovementKeys(client);
+                controllerDrivingMovement = false;
+            }
+            if (client.currentScreen == null && client.player != null) {
+                dpadUpVoiceHeld = buttons[GLFW.GLFW_GAMEPAD_BUTTON_DPAD_UP];
+                if (justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_DPAD_DOWN)) {
+                    quickToggleFlashlight(client);
+                }
+                if (justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_DPAD_RIGHT)) {
+                    client.setScreen(new VicConfigScreen(null));
+                }
+            } else {
+                dpadUpVoiceHeld = false;
+            }
+            System.arraycopy(buttons, 0, prevButtons, 0, buttons.length);
             return;
         }
 
@@ -197,46 +244,37 @@ public class VicControllerService {
         }
 
         // 6. Face Buttons:
-        // Triangle / Y -> Open Inventory
         if (justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_Y)) {
             client.setScreen(new InventoryScreen(client.player));
         }
-        // Square / X -> Quick-Equip or Toggle Flashlight (or Swap Offhand)
         if (justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_X)) {
             if (!quickToggleFlashlight(client)) {
                 triggerKeyClick(client.options.swapHandsKey);
             }
         }
-        // Circle / B -> Drop Active Item
         if (justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_B)) {
             client.player.dropSelectedItem(false);
         }
 
         // 7. Center Buttons:
-        // Options (PS5) / Start (Xbox) -> Pause Game Menu
         if (justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_START)) {
             client.openGameMenu(false);
         }
-        // Create/Share (PS5) / Back (Xbox) -> Open Vic Config Screen
         if (justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_BACK)) {
             client.setScreen(new VicConfigScreen(null));
         }
 
         // 8. D-Pad Vic Mod Actions:
-        // D-Pad Up (Hold): Push-to-Talk Voice Input to Vic
         dpadUpVoiceHeld = buttons[GLFW.GLFW_GAMEPAD_BUTTON_DPAD_UP];
 
-        // D-Pad Down: Quick-Equip & Toggle Flashlight
         if (justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_DPAD_DOWN)) {
             quickToggleFlashlight(client);
         }
 
-        // D-Pad Right: Open Vic Mod Config Screen
         if (justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_DPAD_RIGHT)) {
             client.setScreen(new VicConfigScreen(null));
         }
 
-        // D-Pad Left: Toggle Camera Perspective (First/Third Person)
         if (justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_DPAD_LEFT)) {
             client.options.setPerspective(client.options.getPerspective().next());
         }
@@ -247,7 +285,6 @@ public class VicControllerService {
     private static void handleScreenNavigation(MinecraftClient client, float lx, float ly, boolean[] buttons) {
         long windowHandle = client.getWindow().getHandle();
 
-        // Move OS cursor smoothly with Left Stick so any button on VicConfigScreen or Inventory can be hovered
         if (Math.abs(lx) > 0.01f || Math.abs(ly) > 0.01f) {
             double[] cx = new double[1];
             double[] cy = new double[1];
@@ -258,7 +295,6 @@ public class VicControllerService {
             GLFW.glfwSetCursorPos(windowHandle, newX, newY);
         }
 
-        // Cross (PS5) / A (Xbox) clicks at current mouse position
         if (justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_A) && client.currentScreen != null) {
             double mouseX = client.mouse.getX() * client.getWindow().getScaledWidth() / client.getWindow().getWidth();
             double mouseY = client.mouse.getY() * client.getWindow().getScaledHeight() / client.getWindow().getHeight();
@@ -266,18 +302,16 @@ public class VicControllerService {
             client.currentScreen.mouseReleased(mouseX, mouseY, GLFW.GLFW_MOUSE_BUTTON_LEFT);
         }
 
-        // Circle (PS5) / B (Xbox) or Start closes current screen
         if ((justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_B) || justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_START))
                 && client.currentScreen != null) {
             client.currentScreen.close();
         }
     }
 
-    private static boolean quickToggleFlashlight(MinecraftClient client) {
+    public static boolean quickToggleFlashlight(MinecraftClient client) {
         if (client.player == null || client.interactionManager == null) return false;
         PlayerInventory inv = client.player.getInventory();
 
-        // Check main hand or off hand first
         if (client.player.getMainHandStack().isOf(ModItems.FLASHLIGHT)) {
             client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
             return true;
@@ -287,7 +321,6 @@ public class VicControllerService {
             return true;
         }
 
-        // Search hotbar (slots 0..8)
         for (int i = 0; i < 9; i++) {
             ItemStack stack = inv.getStack(i);
             if (stack.isOf(ModItems.FLASHLIGHT)) {
@@ -349,7 +382,6 @@ public class VicControllerService {
             }
 
             String lower = name.toLowerCase(Locale.ROOT);
-            // Ignore non-gamepad motion/touchpad sub-devices exposed by Linux hid-playstation
             if (lower.contains("motion sensors") || lower.contains("touchpad")) {
                 continue;
             }
@@ -375,9 +407,12 @@ public class VicControllerService {
             }
 
             if (client.player != null) {
+                String modeInfo = isExternalControllerModLoaded()
+                        ? " via " + getExternalControllerModName()
+                        : " (Built-in Mode)";
                 client.player.sendMessage(
                         Text.literal("[Vic Controller] ").formatted(Formatting.AQUA, Formatting.BOLD)
-                                .append(Text.literal("Connected: " + activeProfile.getDisplayName() + " (" + name + ")").formatted(Formatting.GREEN)),
+                                .append(Text.literal("Connected: " + activeProfile.getDisplayName() + modeInfo).formatted(Formatting.GREEN)),
                         true
                 );
             }
@@ -404,7 +439,6 @@ public class VicControllerService {
             }
         }
 
-        // Raw Joystick Fallback (e.g., PS5 DualSense or Xbox controller on Linux if unmapped in GLFW's internal SDL DB)
         FloatBuffer rawAxes = GLFW.glfwGetJoystickAxes(jid);
         ByteBuffer rawButtons = GLFW.glfwGetJoystickButtons(jid);
         if (rawAxes == null || rawButtons == null || rawAxes.remaining() < 4) {
@@ -416,7 +450,6 @@ public class VicControllerService {
         axesOut[GLFW.GLFW_GAMEPAD_AXIS_LEFT_Y] = rawAxes.get(1);
 
         if (isPs && rawAxes.remaining() >= 6) {
-            // Linux hid-playstation raw axis order: 0=LX, 1=LY, 2=L2, 3=RX, 4=RY, 5=R2
             axesOut[GLFW.GLFW_GAMEPAD_AXIS_LEFT_TRIGGER] = rawAxes.get(2);
             axesOut[GLFW.GLFW_GAMEPAD_AXIS_RIGHT_X] = rawAxes.get(3);
             axesOut[GLFW.GLFW_GAMEPAD_AXIS_RIGHT_Y] = rawAxes.get(4);

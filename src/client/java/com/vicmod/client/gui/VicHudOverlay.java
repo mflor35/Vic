@@ -167,6 +167,9 @@ public class VicHudOverlay {
                 case XBOX -> "Xbox";
                 default -> "Pad";
             };
+            if (VicControllerService.isExternalControllerModLoaded()) {
+                padPrefix += " (" + VicControllerService.getExternalControllerModName() + ")";
+            }
             String padHint = padPrefix + ": [D-Up] Mic [D-Dn] Light";
             context.drawTextWithShadow(font, padHint, boxX + 6, boxY + 40, 0x55FFFF);
         }

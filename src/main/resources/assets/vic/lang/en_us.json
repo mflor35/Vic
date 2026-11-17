@@ -9,5 +9,6 @@
   "item.vic.vic_demon_spawn_egg": "Vic Demon Spawn Egg",
   "key.vic.open_config": "Open Vic Config Menu",
   "key.vic.voice_ptt": "Push to Talk (Speak to Vic)",
+  "key.vic.toggle_flashlight": "Quick-Toggle Flashlight",
   "category.vic": "Vic Mod"
 }

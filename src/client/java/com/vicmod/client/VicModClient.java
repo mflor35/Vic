@@ -44,6 +44,7 @@ public class VicModClient implements ClientModInitializer {
 
     private static KeyBinding openConfigKey;
     private static KeyBinding voicePttKey;
+    private static KeyBinding toggleFlashlightKey;
     private static boolean wasVoiceKeyHeld = false;
 
     @Override
@@ -70,9 +71,19 @@ public class VicModClient implements ClientModInitializer {
                 "category.vic"
         ));
 
+        toggleFlashlightKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.vic.toggle_flashlight",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_G,
+                "category.vic"
+        ));
+
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             while (openConfigKey.wasPressed()) {
                 client.setScreen(new VicConfigScreen(client.currentScreen));
+            }
+            while (toggleFlashlightKey.wasPressed()) {
+                VicControllerService.quickToggleFlashlight(client);
             }
 
             VicControllerService.tick(client);
