@@ -135,6 +135,7 @@ public class VicAiService {
 
         int stage = state.computeStage(config.countdownDays);
         vic.setCorruptionStage(stage);
+        vic.markConversationActivity(world.getTime());
         VicHudStatePayload.broadcast(world.getServer(), state);
 
         String provider = config.getEffectiveProvider();
@@ -144,7 +145,7 @@ public class VicAiService {
             queryExternalLlm(player, vic, state, stage, rawMessage);
         } else {
             String response = generateScriptedResponse(player, vic, state, stage, rawMessage);
-            processAndDeliverResponse(player, vic, state, stage, response);
+            processAndDeliverResponse(player, vic, state, stage, rawMessage, response);
         }
     }
 
@@ -226,19 +227,7 @@ public class VicAiService {
         options.addProperty("temperature", 0.8);
         options.addProperty("num_predict", 180);
         payload.add("options", options);
-
-        JsonArray messages = new JsonArray();
-        JsonObject sysMsg = new JsonObject();
-        sysMsg.addProperty("role", "system");
-        sysMsg.addProperty("content", systemPrompt);
-        messages.add(sysMsg);
-
-        JsonObject usrMsg = new JsonObject();
-        usrMsg.addProperty("role", "user");
-        usrMsg.addProperty("content", userMessage);
-        messages.add(usrMsg);
-
-        payload.add("messages", messages);
+        payload.add("messages", buildChatMessages(systemPrompt, state, userMessage));
 
         try {
             HttpRequest request = HttpRequest.newBuilder()
@@ -264,7 +253,7 @@ public class VicAiService {
                                 VicMod.LOGGER.warn("Ollama unavailable or no models are installed (host={}, model={}); using scripted response",
                                         endpointHost(base), model);
                                 String fallback = generateScriptedResponse(player, vic, state, stage, userMessage);
-                                processAndDeliverResponse(player, vic, state, stage, fallback);
+                                processAndDeliverResponse(player, vic, state, stage, userMessage, fallback);
                             });
                         }
                     });
@@ -279,7 +268,7 @@ public class VicAiService {
                                 response != null ? response.statusCode() : "N/A",
                             failureType(error));
                         String fallback = generateScriptedResponse(player, vic, state, stage, userMessage);
-                        processAndDeliverResponse(player, vic, state, stage, fallback);
+                        processAndDeliverResponse(player, vic, state, stage, userMessage, fallback);
                         return;
                     }
                     try {
@@ -289,7 +278,7 @@ public class VicAiService {
                             if (contentEl != null && !contentEl.isJsonNull()) {
                                 String reply = stripThinkBlocks(contentEl.getAsString()).trim();
                                 if (!reply.isEmpty()) {
-                                    processAndDeliverResponse(player, vic, state, stage, reply);
+                                    processAndDeliverResponse(player, vic, state, stage, userMessage, reply);
                                     return;
                                 }
                             }
@@ -304,7 +293,7 @@ public class VicAiService {
                                 if (contentEl != null && !contentEl.isJsonNull()) {
                                     String reply = stripThinkBlocks(contentEl.getAsString()).trim();
                                     if (!reply.isEmpty()) {
-                                        processAndDeliverResponse(player, vic, state, stage, reply);
+                                        processAndDeliverResponse(player, vic, state, stage, userMessage, reply);
                                         return;
                                     }
                                 }
@@ -315,14 +304,14 @@ public class VicAiService {
                                 endpointHost(base), model, failureType(e));
                     }
                     String fallback = generateScriptedResponse(player, vic, state, stage, userMessage);
-                    processAndDeliverResponse(player, vic, state, stage, fallback);
+                    processAndDeliverResponse(player, vic, state, stage, userMessage, fallback);
                 });
             });
         } catch (Exception e) {
             VicMod.LOGGER.warn("Could not create Ollama request (host={}, model={}, cause={}); using scripted response",
                     endpointHost(base), model, failureType(e));
             String fallback = generateScriptedResponse(player, vic, state, stage, userMessage);
-            processAndDeliverResponse(player, vic, state, stage, fallback);
+            processAndDeliverResponse(player, vic, state, stage, userMessage, fallback);
         }
     }
 
@@ -357,19 +346,7 @@ public class VicAiService {
         payload.addProperty("model", config.apiModel);
         payload.addProperty("temperature", 0.8);
         payload.addProperty("max_tokens", 180);
-
-        JsonArray messages = new JsonArray();
-        JsonObject sysMsg = new JsonObject();
-        sysMsg.addProperty("role", "system");
-        sysMsg.addProperty("content", systemPrompt);
-        messages.add(sysMsg);
-
-        JsonObject usrMsg = new JsonObject();
-        usrMsg.addProperty("role", "user");
-        usrMsg.addProperty("content", userMessage);
-        messages.add(usrMsg);
-
-        payload.add("messages", messages);
+        payload.add("messages", buildChatMessages(systemPrompt, state, userMessage));
 
         try {
             HttpRequest.Builder reqBuilder = HttpRequest.newBuilder()
@@ -392,7 +369,7 @@ public class VicAiService {
                                 response != null ? response.statusCode() : "N/A",
                                 failureType(error));
                         String fallback = generateScriptedResponse(player, vic, state, stage, userMessage);
-                        processAndDeliverResponse(player, vic, state, stage, fallback);
+                        processAndDeliverResponse(player, vic, state, stage, userMessage, fallback);
                         return;
                     }
                     try {
@@ -403,7 +380,7 @@ public class VicAiService {
                                     .getAsJsonObject("message")
                                     .get("content");
                             if (contentEl != null && !contentEl.isJsonNull()) {
-                                processAndDeliverResponse(player, vic, state, stage, stripThinkBlocks(contentEl.getAsString()).trim());
+                                processAndDeliverResponse(player, vic, state, stage, userMessage, stripThinkBlocks(contentEl.getAsString()).trim());
                                 return;
                             }
                         }
@@ -412,15 +389,44 @@ public class VicAiService {
                                 config.apiModel, failureType(e));
                     }
                     String fallback = generateScriptedResponse(player, vic, state, stage, userMessage);
-                    processAndDeliverResponse(player, vic, state, stage, fallback);
+                    processAndDeliverResponse(player, vic, state, stage, userMessage, fallback);
                 });
             });
         } catch (Exception e) {
             VicMod.LOGGER.warn("Could not create external LLM request (provider=OPENAI, host={}, model={}, cause={}); using scripted response",
                     endpointHost(config.apiEndpoint), config.apiModel, failureType(e));
             String fallback = generateScriptedResponse(player, vic, state, stage, userMessage);
-            processAndDeliverResponse(player, vic, state, stage, fallback);
+            processAndDeliverResponse(player, vic, state, stage, userMessage, fallback);
         }
+    }
+
+    private static JsonArray buildChatMessages(String systemPrompt, VicWorldState state, String userMessage) {
+        JsonArray messages = new JsonArray();
+        JsonObject sysMsg = new JsonObject();
+        sysMsg.addProperty("role", "system");
+        sysMsg.addProperty("content", systemPrompt);
+        messages.add(sysMsg);
+
+        for (VicWorldState.ConversationTurn turn : state.getConversationMemory()) {
+            if (turn.playerMessage() != null && !turn.playerMessage().isBlank()) {
+                JsonObject pastUser = new JsonObject();
+                pastUser.addProperty("role", "user");
+                pastUser.addProperty("content", turn.playerMessage());
+                messages.add(pastUser);
+            }
+            if (turn.vicResponse() != null && !turn.vicResponse().isBlank()) {
+                JsonObject pastAssistant = new JsonObject();
+                pastAssistant.addProperty("role", "assistant");
+                pastAssistant.addProperty("content", turn.vicResponse());
+                messages.add(pastAssistant);
+            }
+        }
+
+        JsonObject usrMsg = new JsonObject();
+        usrMsg.addProperty("role", "user");
+        usrMsg.addProperty("content", userMessage);
+        messages.add(usrMsg);
+        return messages;
     }
 
     private static String buildSystemPrompt(ServerPlayerEntity player, VicWorldState state, int stage, int maxDays) {
@@ -561,6 +567,16 @@ public class VicAiService {
                     (stage == 0 ? "So much time for fun activities!" : "Every tick brings us closer to the end of the trial period.");
         }
 
+        // Rolling conversation memory recall for scripted mode
+        VicWorldState.ConversationTurn lastTurn = state.getLastConversationTurn();
+        if (lastTurn != null && (lower.contains("remember") || lower.contains("what did i say") || lower.contains("earlier") || lower.contains("last time"))) {
+            return switch (stage) {
+                case 0 -> "Of course I remember, bestie! You said \"" + lastTurn.playerMessage() + "\" and I told you: \"" + lastTurn.vicResponse() + "\"!";
+                case 1 -> "My memory banks record every word you utter! Earlier you said \"" + lastTurn.playerMessage() + "\".";
+                default -> "I never forget anything you say. Like when you said \"" + lastTurn.playerMessage() + "\" on Day " + lastTurn.day() + ".";
+            };
+        }
+
         if (karma < -30 && (lower.contains("give") || lower.contains("help") || lower.contains("stupid") || lower.contains("hate"))) {
             return "YOU WANT SOMETHING?! FINE! TAKE THIS AND CHOKE ON IT! [ACTION:GIVE_BEDROCK]";
         }
@@ -593,7 +609,7 @@ public class VicAiService {
         return stagePool[RANDOM.nextInt(stagePool.length)];
     }
 
-    private static void processAndDeliverResponse(ServerPlayerEntity player, VicEntity vic, VicWorldState state, int stage, String rawResponse) {
+    private static void processAndDeliverResponse(ServerPlayerEntity player, VicEntity vic, VicWorldState state, int stage, String userMessage, String rawResponse) {
         String cleanText = rawResponse;
         String actionTag = null;
 
@@ -606,6 +622,15 @@ public class VicAiService {
             }
         }
 
+        state.recordConversationTurn(player.getName().getString(), userMessage, cleanText);
+        deliverDirectLine(player, vic, stage, cleanText);
+
+        if (actionTag != null) {
+            executeActionTag(player, vic, player.getServerWorld(), actionTag);
+        }
+    }
+
+    public static void deliverDirectLine(ServerPlayerEntity player, VicEntity vic, int stage, String cleanText) {
         Formatting nameColor = switch (stage) {
             case 0 -> Formatting.YELLOW;
             case 1 -> Formatting.GOLD;
@@ -631,10 +656,6 @@ public class VicAiService {
         world.playSound(null, vic.getBlockPos(), SoundEvents.BLOCK_NOTE_BLOCK_BIT.value(), SoundCategory.NEUTRAL, 0.9f, pitch);
 
         VicSpeechPayload.sendTo(player, cleanText, stage);
-
-        if (actionTag != null) {
-            executeActionTag(player, vic, world, actionTag);
-        }
     }
 
     private static void executeActionTag(ServerPlayerEntity player, VicEntity vic, ServerWorld world, String action) {

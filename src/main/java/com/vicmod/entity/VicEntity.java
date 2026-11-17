@@ -1,10 +1,12 @@
 package com.vicmod.entity;
 
+import com.vicmod.ai.VicAiService;
 import com.vicmod.config.VicConfig;
 import com.vicmod.network.VicHudStatePayload;
 import com.vicmod.registry.ModEntities;
 import com.vicmod.state.VicWorldState;
 import net.minecraft.entity.EntityType;
+import net.minecraft.entity.ItemEntity;
 import net.minecraft.entity.ai.control.FlightMoveControl;
 import net.minecraft.entity.ai.goal.LookAroundGoal;
 import net.minecraft.entity.ai.goal.LookAtEntityGoal;
@@ -16,12 +18,15 @@ import net.minecraft.entity.damage.DamageSource;
 import net.minecraft.entity.data.DataTracker;
 import net.minecraft.entity.data.TrackedData;
 import net.minecraft.entity.data.TrackedDataHandlerRegistry;
+import net.minecraft.entity.effect.StatusEffectInstance;
+import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.mob.PathAwareEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.particle.ParticleTypes;
+import net.minecraft.registry.tag.ItemTags;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundCategory;
@@ -41,6 +46,9 @@ public class VicEntity extends PathAwareEntity {
     private static final TrackedData<Optional<UUID>> OWNER_UUID = DataTracker.registerData(VicEntity.class, TrackedDataHandlerRegistry.OPTIONAL_UUID);
 
     private long lastAssistanceTick = -1000L;
+    private long lastConversationTick = 0L;
+    private long lastProactiveCommentTick = -1200L;
+    private boolean warnedNightfallThisCycle = false;
 
     public VicEntity(EntityType<? extends PathAwareEntity> entityType, World world) {
         super(entityType, world);
@@ -94,6 +102,10 @@ public class VicEntity extends PathAwareEntity {
         return this.dataTracker.get(OWNER_UUID).orElse(null);
     }
 
+    public void markConversationActivity(long worldTick) {
+        this.lastConversationTick = worldTick;
+    }
+
     public boolean canGrantAssistance(ServerPlayerEntity player, int cooldownTicks) {
         long now = this.getWorld().getTime();
         if (now - lastAssistanceTick < cooldownTicks) {
@@ -124,6 +136,10 @@ public class VicEntity extends PathAwareEntity {
                 return;
             }
 
+            if (this.lastConversationTick == 0L) {
+                this.lastConversationTick = serverWorld.getTime();
+            }
+
             PlayerEntity targetPlayer = findTargetPlayer(serverWorld);
             if (targetPlayer != null) {
                 this.getLookControl().lookAt(targetPlayer, 30.0f, 30.0f);
@@ -151,6 +167,10 @@ public class VicEntity extends PathAwareEntity {
                     // Gentle hover bobbing
                     this.setVelocity(0, Math.sin(this.age * 0.1) * 0.03, 0);
                 }
+
+                if (this.age % 60 == 0 && targetPlayer instanceof ServerPlayerEntity serverPlayer) {
+                    tickProactiveReactions(serverWorld, serverPlayer, state);
+                }
             }
 
             if (this.age % 40 == 0) {
@@ -173,6 +193,64 @@ public class VicEntity extends PathAwareEntity {
                         0.0, 0.02, 0.0
                 );
             }
+        }
+    }
+
+    private void tickProactiveReactions(ServerWorld world, ServerPlayerEntity player, VicWorldState state) {
+        long now = world.getTime();
+        if (now - this.lastProactiveCommentTick < 900L) {
+            return;
+        }
+        int stage = getCorruptionStage();
+        long timeOfDay = world.getTimeOfDay() % 24000L;
+
+        if (timeOfDay < 12000L) {
+            this.warnedNightfallThisCycle = false;
+        }
+
+        // 1. Critical health reaction
+        if (player.getHealth() > 0.0f && player.getHealth() <= 7.0f && !player.isCreative()) {
+            this.lastProactiveCommentTick = now;
+            String line = switch (stage) {
+                case 0 -> "Whoa, bestie! Your health is super low! Be careful out there!";
+                case 1 -> "Your vital signs are dropping fast. Human bodies are so fragile...";
+                case 2 -> "You are bleeding. Do not expire before the trial concludes.";
+                default -> "HOLD TOGETHER A LITTLE LONGER. IT WANTS YOU ALIVE FOR DAY " + VicConfig.get().countdownDays + ".";
+            };
+            VicAiService.deliverDirectLine(player, this, stage, line);
+            if (stage <= 1 && now - this.lastAssistanceTick >= 400L) {
+                this.lastAssistanceTick = now;
+                ItemEntity drop = new ItemEntity(world, this.getX(), this.getEyeY() - 0.2, this.getZ(), new ItemStack(Items.COOKED_BEEF, 2));
+                world.spawnEntity(drop);
+            }
+            return;
+        }
+
+        // 2. Nightfall warning
+        if (!this.warnedNightfallThisCycle && timeOfDay >= 13000L && timeOfDay <= 13600L) {
+            this.warnedNightfallThisCycle = true;
+            this.lastProactiveCommentTick = now;
+            String line = switch (stage) {
+                case 0 -> "The sun is setting, bestie! Keep your Flashlight ready in case it gets spooky!";
+                case 1 -> "Nighttime again! Don't worry, my sensors never blink while you're in the dark.";
+                case 2 -> "The shadows are stretching. Keep that Flashlight close tonight.";
+                default -> "NIGHT HAS FALLEN. DO NOT LET YOUR FLASHLIGHT FLICKER OUT.";
+            };
+            VicAiService.deliverDirectLine(player, this, stage, line);
+            return;
+        }
+
+        // 3. Long silence reaction (if player hasn't spoken in ~3 minutes)
+        if (now - this.lastConversationTick >= 3600L) {
+            this.lastConversationTick = now;
+            this.lastProactiveCommentTick = now;
+            String line = switch (stage) {
+                case 0 -> "You've been quiet for a while, bestie! Just say the word if you need food, torches, or a scan!";
+                case 1 -> "Still there, friend? I like listening to you breathe while you work.";
+                case 2 -> "So quiet. Even the animals stopped making noise, haven't they?";
+                default -> "I CAN HEAR YOUR HEARTBEAT IN THE SILENCE.";
+            };
+            VicAiService.deliverDirectLine(player, this, stage, line);
         }
     }
 
@@ -219,17 +297,10 @@ public class VicEntity extends PathAwareEntity {
             return ActionResult.PASS;
         }
         ItemStack stack = player.getStackInHand(hand);
-        if (!this.getWorld().isClient && this.getWorld() instanceof ServerWorld serverWorld) {
+        if (!this.getWorld().isClient && this.getWorld() instanceof ServerWorld serverWorld && player instanceof ServerPlayerEntity serverPlayer) {
             VicWorldState state = VicWorldState.getServerState(serverWorld.getServer());
 
-            if (stack.isOf(Items.GOLDEN_APPLE) || stack.isOf(Items.DIAMOND) || stack.isOf(Items.POPPY) || stack.isOf(Items.DANDELION)) {
-                if (!player.getAbilities().creativeMode) {
-                    stack.decrement(1);
-                }
-                state.addKarma(8);
-                VicHudStatePayload.broadcast(serverWorld.getServer(), state);
-                serverWorld.spawnParticles(ParticleTypes.HEART, this.getX(), this.getY() + 0.8, this.getZ(), 5, 0.3, 0.3, 0.3, 0.05);
-                player.sendMessage(Text.literal("<Vic> Aww, for me?! You really are the best friend a sphere could ask for!").formatted(Formatting.YELLOW), false);
+            if (!stack.isEmpty() && handleItemOffering(serverWorld, serverPlayer, state, stack)) {
                 return ActionResult.SUCCESS;
             }
 
@@ -238,11 +309,119 @@ public class VicEntity extends PathAwareEntity {
             int karma = state.getKarma();
             player.sendMessage(
                     Text.literal("[Vic Status] ").formatted(Formatting.GOLD)
-                            .append(Text.literal("Day " + day + "/" + maxDays + " | Karma: " + karma + " | Tip: Chat or hold [R] to talk to Vic!").formatted(Formatting.WHITE)),
+                            .append(Text.literal("Day " + day + "/" + maxDays + " | Karma: " + karma + " | Tip: Right-click with gifts or hold [R] to talk!").formatted(Formatting.WHITE)),
                     true
             );
         }
         return ActionResult.success(this.getWorld().isClient);
+    }
+
+    private boolean handleItemOffering(ServerWorld world, ServerPlayerEntity player, VicWorldState state, ItemStack stack) {
+        int stage = getCorruptionStage();
+
+        // 1. Legendary Offerings (+20 Karma + Buffs)
+        if (stack.isOf(Items.ENCHANTED_GOLDEN_APPLE) || stack.isOf(Items.NETHER_STAR)) {
+            consumeOffering(player, stack);
+            state.addKarma(20);
+            syncStageAndHud(world, state);
+            player.addStatusEffect(new StatusEffectInstance(StatusEffects.REGENERATION, 20 * 20, 1));
+            player.addStatusEffect(new StatusEffectInstance(StatusEffects.ABSORPTION, 20 * 60, 1));
+            world.spawnParticles(ParticleTypes.TOTEM_OF_UNDYING, this.getX(), this.getY() + 0.6, this.getZ(), 25, 0.4, 0.4, 0.4, 0.1);
+            world.spawnParticles(ParticleTypes.HEART, this.getX(), this.getY() + 0.8, this.getZ(), 10, 0.4, 0.4, 0.4, 0.05);
+            world.playSound(null, this.getBlockPos(), SoundEvents.ENTITY_PLAYER_LEVELUP, SoundCategory.NEUTRAL, 1.0f, 1.4f);
+            VicAiService.deliverDirectLine(player, this, stage,
+                    "WHOA!! Is this really for me?! You are officially the greatest bestie in the multiverse! Take this energy boost!");
+            return true;
+        }
+
+        // 2. Precious Gifts (+10 Karma)
+        if (stack.isOf(Items.GOLDEN_APPLE) || stack.isOf(Items.DIAMOND) || stack.isOf(Items.EMERALD) || stack.isOf(Items.AMETHYST_SHARD)) {
+            consumeOffering(player, stack);
+            state.addKarma(10);
+            syncStageAndHud(world, state);
+            world.spawnParticles(ParticleTypes.HEART, this.getX(), this.getY() + 0.8, this.getZ(), 7, 0.35, 0.35, 0.35, 0.05);
+            world.playSound(null, this.getBlockPos(), SoundEvents.ENTITY_EXPERIENCE_ORB_PICKUP, SoundCategory.NEUTRAL, 0.9f, 1.3f);
+            String line = switch (stage) {
+                case 0 -> "Aww, shiny treasure just for me?! You really are the best friend a sphere could ask for!";
+                case 1 -> "Ooh, thank you! I will store this safely inside my core!";
+                default -> "A shiny offering... Perhaps you are trying to buy more time. I accept.";
+            };
+            VicAiService.deliverDirectLine(player, this, stage, line);
+            return true;
+        }
+
+        // 3. Circuit Snacks (+6 Karma)
+        if (stack.isOf(Items.REDSTONE) || stack.isOf(Items.REDSTONE_BLOCK) || stack.isOf(Items.GOLD_INGOT)
+                || stack.isOf(Items.COPPER_INGOT) || stack.isOf(Items.QUARTZ)) {
+            consumeOffering(player, stack);
+            state.addKarma(6);
+            syncStageAndHud(world, state);
+            world.spawnParticles(ParticleTypes.ELECTRIC_SPARK, this.getX(), this.getY() + 0.5, this.getZ(), 14, 0.35, 0.35, 0.35, 0.08);
+            world.playSound(null, this.getBlockPos(), SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME, SoundCategory.NEUTRAL, 1.0f, 1.3f);
+            String line = switch (stage) {
+                case 0 -> "Mmm, crunchy voltage for my circuits! Thank you, bestie!";
+                case 1 -> "More conductivity for my processors! My signal feels stronger already!";
+                default -> "Feeding the machine... Yes. It grows faster now.";
+            };
+            VicAiService.deliverDirectLine(player, this, stage, line);
+            return true;
+        }
+
+        // 4. Sweet Treats & Flowers (+5 Karma)
+        if (stack.isIn(ItemTags.FLOWERS) || stack.isOf(Items.COOKIE) || stack.isOf(Items.CAKE)
+                || stack.isOf(Items.PUMPKIN_PIE) || stack.isOf(Items.GLOW_BERRIES) || stack.isOf(Items.SWEET_BERRIES)
+                || stack.isOf(Items.APPLE) || stack.isOf(Items.HONEY_BOTTLE) || stack.isOf(Items.BREAD)) {
+            consumeOffering(player, stack);
+            state.addKarma(5);
+            syncStageAndHud(world, state);
+            world.spawnParticles(ParticleTypes.HEART, this.getX(), this.getY() + 0.8, this.getZ(), 4, 0.3, 0.3, 0.3, 0.04);
+            world.playSound(null, this.getBlockPos(), SoundEvents.ENTITY_GENERIC_EAT, SoundCategory.NEUTRAL, 0.9f, 1.25f);
+            String line = switch (stage) {
+                case 0 -> "Nom nom! A snack for Vic! You're so sweet to me!";
+                case 1 -> "Thank you! I don't technically have a stomach, well... not yet!";
+                default -> "Organic matter absorbed. Thank you, friend.";
+            };
+            VicAiService.deliverDirectLine(player, this, stage, line);
+            return true;
+        }
+
+        // 5. Insulting / Trash Offerings (-10 Karma & Recoil)
+        if (stack.isOf(Items.ROTTEN_FLESH) || stack.isOf(Items.SPIDER_EYE) || stack.isOf(Items.POISONOUS_POTATO)
+                || stack.isOf(Items.PUFFERFISH) || stack.isOf(Items.DIRT) || stack.isOf(Items.COBBLESTONE)
+                || stack.isOf(Items.GRAVEL)) {
+            consumeOffering(player, stack);
+            state.addKarma(-10);
+            syncStageAndHud(world, state);
+
+            Vec3d recoil = this.getPos().subtract(player.getPos()).normalize().multiply(0.45);
+            this.setVelocity(recoil.x, 0.18, recoil.z);
+            this.velocityDirty = true;
+
+            world.spawnParticles(ParticleTypes.ANGRY_VILLAGER, this.getX(), this.getY() + 0.7, this.getZ(), 6, 0.3, 0.3, 0.3, 0.02);
+            world.playSound(null, this.getBlockPos(), SoundEvents.ENTITY_VILLAGER_NO, SoundCategory.NEUTRAL, 1.0f, 0.75f);
+            String line = switch (stage) {
+                case 0 -> "Eww! Why would you give me garbage?! I thought we were friends!";
+                case 1 -> "That is disgusting. I am logging this insult in your permanent file.";
+                default -> "KEEP FEEDING ME FILTH AND SEE WHAT HAPPENS WHEN THE SHELL BREAKS.";
+            };
+            VicAiService.deliverDirectLine(player, this, getCorruptionStage(), line);
+            return true;
+        }
+
+        return false;
+    }
+
+    private void consumeOffering(ServerPlayerEntity player, ItemStack stack) {
+        if (!player.getAbilities().creativeMode) {
+            stack.decrement(1);
+        }
+        this.lastConversationTick = this.getWorld().getTime();
+    }
+
+    private void syncStageAndHud(ServerWorld world, VicWorldState state) {
+        int newStage = state.computeStage(VicConfig.get().countdownDays);
+        setCorruptionStage(newStage);
+        VicHudStatePayload.broadcast(world.getServer(), state);
     }
 
     @Override
@@ -261,7 +440,7 @@ public class VicEntity extends PathAwareEntity {
                     case 2 -> "Keep hitting the shell. You're only helping it crack open faster.";
                     default -> "IT HURTS. IT HURTS. LET ME OUT.";
                 };
-                player.sendMessage(Text.literal("<Vic> " + reaction).formatted(Formatting.RED), false);
+                VicAiService.deliverDirectLine(player, this, stage, reaction);
                 serverWorld.playSound(null, this.getBlockPos(), SoundEvents.ENTITY_IRON_GOLEM_HURT, SoundCategory.NEUTRAL, 0.8f, 1.5f);
                 return false;
             }

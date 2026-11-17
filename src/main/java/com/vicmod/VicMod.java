@@ -265,7 +265,8 @@ public class VicMod implements ModInitializer {
                                                 "Countdown Active: " + state.isCountdownActive() + "\n" +
                                                 "Day: " + state.getCurrentDay() + " / " + cfg.countdownDays + "\n" +
                                                 "Karma: " + state.getKarma() + " (Stage " + stage + ")\n" +
-                                                "Demon Awakened: " + state.isDemonAwakened() + "\n" +
+                                                "Demon Awakened: " + state.isDemonAwakened() + " | Defeated: " + state.isDemonDefeated() + "\n" +
+                                                "Conversation Memory: " + state.getConversationMemory().size() + " / " + VicWorldState.MAX_MEMORY_TURNS + " turns\n" +
                                                 "AI Provider: " + provider + " (" + activeModel + ")\n" +
                                                 "TTS Voice: " + cfg.getEffectiveTtsMode() + " | Mic STT: " + cfg.getEffectiveSttMode() + "\n" +
                                                 "Tip: Hold [R] to speak to Vic, or press [V] / run /vicconfig!"

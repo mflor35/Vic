@@ -24,7 +24,7 @@ public class VicHudOverlay {
         currentDay = payload.currentDay();
         maxDays = Math.max(1, payload.maxDays());
         karma = MathHelper.clamp(payload.karma(), -100, 100);
-        stage = MathHelper.clamp(payload.stage(), 0, 4);
+        stage = MathHelper.clamp(payload.stage(), 0, 5);
         demonAwakened = payload.demonAwakened();
     }
 
@@ -60,6 +60,7 @@ public class VicHudOverlay {
         int boxHeight = hasPad ? 52 : 40;
 
         int borderColor = switch (displayStage) {
+            case 5 -> 0xCC55FF55;
             case 0 -> 0xCCFFE135;
             case 1 -> 0xCCFFAA00;
             case 2 -> 0xCCFF5555;
@@ -77,7 +78,10 @@ public class VicHudOverlay {
         // Row 1: Day counter & face badge
         String dayLabel;
         int dayColor;
-        if (demonAwakened) {
+        if (displayStage == 5) {
+            dayLabel = "TRIAL SURVIVED [VICTORY]";
+            dayColor = 0x55FF55;
+        } else if (demonAwakened) {
             dayLabel = "DAY " + displayDay + "/" + displayMaxDays + " [EXPIRED]";
             dayColor = 0xFF5555;
         } else if (countdownActive) {
@@ -89,6 +93,7 @@ public class VicHudOverlay {
         }
 
         String faceBadge = switch (displayStage) {
+            case 5 -> ":D";
             case 0 -> ":)";
             case 1 -> ":|";
             case 2 -> ":/";
@@ -96,6 +101,7 @@ public class VicHudOverlay {
             default -> "!!";
         };
         int badgeColor = switch (displayStage) {
+            case 5 -> 0x55FF55;
             case 0 -> 0xFFE135;
             case 1 -> 0xFFAA00;
             case 2 -> 0xFF5555;
@@ -120,7 +126,7 @@ public class VicHudOverlay {
             karmaColor = 0xFF5555;
         }
 
-        String stageText = demonAwakened ? "DEMON" : ("Stage " + displayStage);
+        String stageText = displayStage == 5 ? "CLEARED" : (demonAwakened ? "DEMON" : ("Stage " + displayStage));
         int stageWidth = font.getWidth(stageText);
 
         context.drawTextWithShadow(font, karmaText, boxX + 6, boxY + 17, karmaColor);

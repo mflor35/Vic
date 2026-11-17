@@ -44,7 +44,7 @@ public record VicHudStatePayload(
 
     public static VicHudStatePayload fromState(VicWorldState state) {
         int maxDays = Math.max(1, VicConfig.get().countdownDays);
-        int stage = state.computeStage(maxDays);
+        int stage = state.isDemonDefeated() ? 5 : state.computeStage(maxDays);
         return new VicHudStatePayload(
                 state.isCountdownActive(),
                 state.getCurrentDay(),

@@ -16,6 +16,9 @@ import net.minecraft.world.PersistentState;
 import net.minecraft.world.PersistentStateManager;
 import net.minecraft.world.World;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -23,15 +26,21 @@ import java.util.UUID;
 
 public class VicWorldState extends PersistentState {
     private static final String KEY = "vic_world_state";
+    public static final int MAX_MEMORY_TURNS = 8;
+
+    public record ConversationTurn(String playerName, String playerMessage, String vicResponse, int day) {
+    }
 
     private int karma = 25;
     private int currentDay = 1;
     private boolean countdownActive = false;
     private long activationTimeTick = 0L;
     private boolean demonAwakened = false;
+    private boolean demonDefeated = false;
     private boolean initialDeliverySpawned = false;
     private UUID activeVicUuid = null;
     private final Set<UUID> welcomedPlayers = new HashSet<>();
+    private final Deque<ConversationTurn> conversationMemory = new ArrayDeque<>();
 
     public static Type<VicWorldState> getPersistentStateType() {
         return new Type<>(
@@ -62,6 +71,7 @@ public class VicWorldState extends PersistentState {
         state.countdownActive = nbt.getBoolean("countdownActive");
         state.activationTimeTick = nbt.getLong("activationTimeTick");
         state.demonAwakened = nbt.getBoolean("demonAwakened");
+        state.demonDefeated = nbt.getBoolean("demonDefeated");
         state.initialDeliverySpawned = nbt.getBoolean("initialDeliverySpawned");
         if (nbt.containsUuid("activeVicUuid")) {
             state.activeVicUuid = nbt.getUuid("activeVicUuid");
@@ -76,6 +86,23 @@ public class VicWorldState extends PersistentState {
                 }
             }
         }
+
+        if (nbt.contains("conversationMemory", NbtElement.LIST_TYPE)) {
+            NbtList memoryList = nbt.getList("conversationMemory", NbtElement.COMPOUND_TYPE);
+            for (int i = 0; i < memoryList.size(); i++) {
+                NbtCompound turnNbt = memoryList.getCompound(i);
+                String player = turnNbt.getString("player");
+                String msg = turnNbt.getString("user");
+                String reply = turnNbt.getString("vic");
+                int day = Math.max(1, turnNbt.getInt("day"));
+                if (!msg.isBlank() || !reply.isBlank()) {
+                    state.conversationMemory.addLast(new ConversationTurn(player, msg, reply, day));
+                }
+            }
+            while (state.conversationMemory.size() > MAX_MEMORY_TURNS) {
+                state.conversationMemory.removeFirst();
+            }
+        }
         return state;
     }
 
@@ -86,6 +113,7 @@ public class VicWorldState extends PersistentState {
         nbt.putBoolean("countdownActive", countdownActive);
         nbt.putLong("activationTimeTick", activationTimeTick);
         nbt.putBoolean("demonAwakened", demonAwakened);
+        nbt.putBoolean("demonDefeated", demonDefeated);
         nbt.putBoolean("initialDeliverySpawned", initialDeliverySpawned);
         if (activeVicUuid != null) {
             nbt.putUuid("activeVicUuid", activeVicUuid);
@@ -96,7 +124,47 @@ public class VicWorldState extends PersistentState {
             list.add(NbtString.of(uuid.toString()));
         }
         nbt.put("welcomedPlayers", list);
+
+        NbtList memoryList = new NbtList();
+        for (ConversationTurn turn : conversationMemory) {
+            NbtCompound turnNbt = new NbtCompound();
+            turnNbt.putString("player", turn.playerName() != null ? turn.playerName() : "Player");
+            turnNbt.putString("user", turn.playerMessage() != null ? turn.playerMessage() : "");
+            turnNbt.putString("vic", turn.vicResponse() != null ? turn.vicResponse() : "");
+            turnNbt.putInt("day", turn.day());
+            memoryList.add(turnNbt);
+        }
+        nbt.put("conversationMemory", memoryList);
         return nbt;
+    }
+
+    public void recordConversationTurn(String playerName, String playerMessage, String vicResponse) {
+        if ((playerMessage == null || playerMessage.isBlank()) && (vicResponse == null || vicResponse.isBlank())) {
+            return;
+        }
+        while (conversationMemory.size() >= MAX_MEMORY_TURNS) {
+            conversationMemory.removeFirst();
+        }
+        conversationMemory.addLast(new ConversationTurn(
+                playerName != null ? playerName : "Player",
+                playerMessage != null ? playerMessage.trim() : "",
+                vicResponse != null ? vicResponse.trim() : "",
+                this.currentDay
+        ));
+        markDirty();
+    }
+
+    public List<ConversationTurn> getConversationMemory() {
+        return new ArrayList<>(conversationMemory);
+    }
+
+    public ConversationTurn getLastConversationTurn() {
+        return conversationMemory.peekLast();
+    }
+
+    public void clearConversationMemory() {
+        conversationMemory.clear();
+        markDirty();
     }
 
     public static boolean isVicCharacter(Entity entity) {
@@ -218,6 +286,7 @@ public class VicWorldState extends PersistentState {
         this.countdownActive = true;
         this.activationTimeTick = currentWorldTick - (this.currentDay - 1L) * 24000L;
         this.demonAwakened = false;
+        this.demonDefeated = false;
         markDirty();
     }
 
@@ -225,11 +294,17 @@ public class VicWorldState extends PersistentState {
         return countdownActive;
     }
 
+    public void setCountdownActive(boolean active) {
+        this.countdownActive = active;
+        markDirty();
+    }
+
     public void activateCountdown(long currentWorldTick) {
         if (!this.countdownActive) {
             this.countdownActive = true;
             this.activationTimeTick = currentWorldTick;
             this.currentDay = 1;
+            this.demonDefeated = false;
             markDirty();
         }
     }
@@ -247,6 +322,15 @@ public class VicWorldState extends PersistentState {
         markDirty();
     }
 
+    public boolean isDemonDefeated() {
+        return demonDefeated;
+    }
+
+    public void setDemonDefeated(boolean defeated) {
+        this.demonDefeated = defeated;
+        markDirty();
+    }
+
     public boolean hasWelcomedPlayer(UUID uuid) {
         return welcomedPlayers.contains(uuid);
     }
@@ -257,6 +341,9 @@ public class VicWorldState extends PersistentState {
     }
 
     public int computeStage(int maxDays) {
+        if (demonDefeated) {
+            return 0;
+        }
         if (demonAwakened || currentDay > maxDays) {
             return 4;
         }
