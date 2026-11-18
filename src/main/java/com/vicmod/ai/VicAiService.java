@@ -38,6 +38,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Random;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
 public class VicAiService {
@@ -45,6 +46,7 @@ public class VicAiService {
             .connectTimeout(Duration.ofSeconds(8))
             .build();
     private static final Random RANDOM = new Random();
+    private static final java.util.Set<UUID> PENDING_QUERIES = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private static volatile boolean attemptedAutoStartOllama = false;
 
     private static String endpointHost(String endpoint) {
@@ -121,6 +123,10 @@ public class VicAiService {
         );
 
         if (nearbyVics.isEmpty()) {
+            return;
+        }
+
+        if (!PENDING_QUERIES.add(player.getUUID())) {
             return;
         }
 
@@ -239,16 +245,26 @@ public class VicAiService {
 
             CompletableFuture<HttpResponse<String>> future = HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofString());
             future.whenComplete((response, error) -> {
+                net.minecraft.server.MinecraftServer server = player.level() != null ? player.level().getServer() : null;
+                if (server == null || server.isStopped() || player.isRemoved()) {
+                    PENDING_QUERIES.remove(player.getUUID());
+                    return;
+                }
+
                 if (allowModelAutoFix && (error != null || (response != null && response.statusCode() == 404))) {
                     ensureLocalOllamaReady();
                     fetchOllamaModels(config.ollamaUrl).thenAccept(models -> {
+                        if (server.isStopped() || player.isRemoved()) {
+                            PENDING_QUERIES.remove(player.getUUID());
+                            return;
+                        }
                         if (!models.isEmpty()) {
                             syncDefaultModelIfMissing(config, models);
-                            player.level().getServer().execute(() ->
+                            server.execute(() ->
                                     queryOllamaLlmWithRetry(player, vic, state, stage, userMessage, false)
                             );
                         } else {
-                            player.level().getServer().execute(() -> {
+                            server.execute(() -> {
                                 VicMod.LOGGER.warn("Ollama unavailable or no models are installed (host={}, model={}); using scripted response",
                                         endpointHost(base), model);
                                 String fallback = generateScriptedResponse(player, vic, state, stage, userMessage);
@@ -259,7 +275,7 @@ public class VicAiService {
                     return;
                 }
 
-                player.level().getServer().execute(() -> {
+                server.execute(() -> {
                     if (error != null || response == null || response.statusCode() >= 400) {
                         VicMod.LOGGER.warn("Ollama request failed (host={}, model={}, status={}, cause={}); using scripted response",
                             endpointHost(base),
@@ -358,7 +374,12 @@ public class VicAiService {
 
             CompletableFuture<HttpResponse<String>> future = HTTP_CLIENT.sendAsync(reqBuilder.build(), HttpResponse.BodyHandlers.ofString());
             future.whenComplete((response, error) -> {
-                player.level().getServer().execute(() -> {
+                net.minecraft.server.MinecraftServer server = player.level() != null ? player.level().getServer() : null;
+                if (server == null || server.isStopped() || player.isRemoved()) {
+                    PENDING_QUERIES.remove(player.getUUID());
+                    return;
+                }
+                server.execute(() -> {
                     if (error != null || response == null || response.statusCode() >= 400) {
                         VicMod.LOGGER.warn("External LLM request failed (provider=OPENAI, host={}, model={}, status={}, cause={}); using scripted response",
                                 endpointHost(config.apiEndpoint),
@@ -675,6 +696,7 @@ public class VicAiService {
     }
 
     private static void processAndDeliverResponse(ServerPlayer player, VicEntity vic, VicWorldState state, int stage, String userMessage, String rawResponse) {
+        PENDING_QUERIES.remove(player.getUUID());
         String cleanText = rawResponse;
         String actionTag = null;
 
@@ -713,49 +735,52 @@ public class VicAiService {
             case 2 -> 0.8f;
             default -> 0.5f;
         };
-        world.playSound(null, vic.blockPosition(), SoundEvents.NOTE_BLOCK_BIT.value(), SoundSource.NEUTRAL, 0.9f, pitch);
+        BlockPos soundPos = (vic != null && !vic.isRemoved()) ? vic.blockPosition() : player.blockPosition();
+        world.playSound(null, soundPos, SoundEvents.NOTE_BLOCK_BIT.value(), SoundSource.NEUTRAL, 0.9f, pitch);
 
         VicSpeechPayload.sendTo(player, cleanText, stage);
     }
 
     private static void executeActionTag(ServerPlayer player, VicEntity vic, ServerLevel world, String action) {
+        boolean hasLivingVic = vic != null && vic.isAlive() && !vic.isRemoved();
         switch (action) {
             case "GIVE_GOLDEN_APPLE" -> {
-                if (vic.canGrantAssistance(player, 600)) {
+                if (!hasLivingVic || vic.canGrantAssistance(player, 600)) {
                     tossItemToPlayer(world, vic, player, new ItemStack(Items.GOLDEN_APPLE, 1));
                 }
             }
             case "GIVE_FOOD" -> {
-                if (vic.canGrantAssistance(player, 200)) {
+                if (!hasLivingVic || vic.canGrantAssistance(player, 200)) {
                     tossItemToPlayer(world, vic, player, new ItemStack(Items.COOKED_BEEF, 3));
                 }
             }
             case "GIVE_TORCH" -> {
-                if (vic.canGrantAssistance(player, 200)) {
+                if (!hasLivingVic || vic.canGrantAssistance(player, 200)) {
                     tossItemToPlayer(world, vic, player, new ItemStack(Items.TORCH, 8));
                 }
             }
             case "GIVE_IRON" -> {
-                if (vic.canGrantAssistance(player, 600)) {
+                if (!hasLivingVic || vic.canGrantAssistance(player, 600)) {
                     tossItemToPlayer(world, vic, player, new ItemStack(Items.IRON_INGOT, 3));
                 }
             }
             case "GIVE_BEDROCK" -> {
                 tossItemToPlayer(world, vic, player, new ItemStack(Blocks.BEDROCK, 1));
-                world.playSound(null, vic.blockPosition(), SoundEvents.ELDER_GUARDIAN_CURSE, SoundSource.HOSTILE, 0.8f, 0.6f);
+                BlockPos cursePos = hasLivingVic ? vic.blockPosition() : player.blockPosition();
+                world.playSound(null, cursePos, SoundEvents.ELDER_GUARDIAN_CURSE, SoundSource.HOSTILE, 0.8f, 0.6f);
             }
             case "BUILD_CHEST" -> {
-                if (vic.canGrantAssistance(player, 400)) {
+                if (!hasLivingVic || vic.canGrantAssistance(player, 400)) {
                     placeSingleBlock(world, player, Blocks.CHEST, "I built a chest right in front of you! Store away!");
                 }
             }
             case "BUILD_FURNACE" -> {
-                if (vic.canGrantAssistance(player, 400)) {
+                if (!hasLivingVic || vic.canGrantAssistance(player, 400)) {
                     placeSingleBlock(world, player, Blocks.FURNACE, "Furnace deployed! Time to smelt and cook!");
                 }
             }
             case "BUILD_IRON_WALL" -> {
-                if (vic.canGrantAssistance(player, 400)) {
+                if (!hasLivingVic || vic.canGrantAssistance(player, 400)) {
                     placeIronWall(world, player);
                 }
             }
@@ -831,16 +856,20 @@ public class VicAiService {
     }
 
     private static void tossItemToPlayer(ServerLevel world, VicEntity vic, ServerPlayer player, ItemStack stack) {
-        ItemEntity itemEntity = new ItemEntity(world, vic.getX(), vic.getEyeY() - 0.2, vic.getZ(), stack);
-        double dx = player.getX() - vic.getX();
-        double dy = (player.getEyeY() - 0.4) - vic.getY();
-        double dz = player.getZ() - vic.getZ();
+        double spawnX = (vic != null && !vic.isRemoved()) ? vic.getX() : player.getX();
+        double spawnY = (vic != null && !vic.isRemoved()) ? vic.getEyeY() - 0.2 : player.getEyeY();
+        double spawnZ = (vic != null && !vic.isRemoved()) ? vic.getZ() : player.getZ();
+        ItemEntity itemEntity = new ItemEntity(world, spawnX, spawnY, spawnZ, stack);
+        double dx = player.getX() - spawnX;
+        double dy = (player.getEyeY() - 0.4) - spawnY;
+        double dz = player.getZ() - spawnZ;
         double len = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (len > 0.001) {
             itemEntity.setDeltaMovement(dx / len * 0.35, dy / len * 0.35 + 0.15, dz / len * 0.35);
         }
         world.addFreshEntity(itemEntity);
-        world.playSound(null, vic.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.NEUTRAL, 0.8f, 1.2f);
+        BlockPos soundPos = (vic != null && !vic.isRemoved()) ? vic.blockPosition() : player.blockPosition();
+        world.playSound(null, soundPos, SoundEvents.ITEM_PICKUP, SoundSource.NEUTRAL, 0.8f, 1.2f);
     }
 
     private static BlockPos scanForBlock(ServerLevel world, BlockPos center, int radius) {

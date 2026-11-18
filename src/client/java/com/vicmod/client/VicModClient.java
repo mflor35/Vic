@@ -28,6 +28,7 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.ModelLayerRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.fabricmc.fabric.api.client.rendering.v1.level.LevelRenderEvents;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -87,6 +88,10 @@ public class VicModClient implements ClientModInitializer {
 
             VicControllerService.tick(client);
             handlePushToTalkTick(client);
+        });
+
+        LevelRenderEvents.START_MAIN.register(context -> {
+            VicControllerService.renderTick(Minecraft.getInstance());
         });
 
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {

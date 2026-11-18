@@ -54,6 +54,8 @@ public class VicControllerService {
     private static boolean sneakToggled = false;
     private static boolean sprintToggled = false;
     private static boolean dpadUpVoiceHeld = false;
+    private static long lastFrameTimeNs = 0L;
+    private static float turnAroundHoldSeconds = 0.0f;
 
     /**
      * Checks if a dedicated controller mod (Controlify, MidnightControls, or Controllable) is loaded.
@@ -201,20 +203,29 @@ public class VicControllerService {
         }
 
         // 2. Right Stick Camera Look
-        if (Math.abs(rx) > 0.001f || Math.abs(ry) > 0.001f) {
-            float sens = Mth.clamp(VicConfig.get().controllerSensitivity, 1.0f, 25.0f) * 2.2f;
-            float curvedRx = Math.copySign(rx * rx, rx) * sens;
-            float curvedRy = Math.copySign(ry * ry, ry) * sens;
-            client.player.turn(curvedRx, curvedRy);
+        // Only run from tick if renderTick hasn't updated recently (fallback for non-render frames)
+        long nowNs = System.nanoTime();
+        if (nowNs - lastFrameTimeNs > 80_000_000L) {
+            if (Math.abs(rx) > 0.001f || Math.abs(ry) > 0.001f) {
+                applyCameraRotation(client, rx, ry, 0.05f);
+            } else {
+                turnAroundHoldSeconds = 0.0f;
+            }
         }
 
-        // 3. L3 (Sprint) & R3 (Sneak Toggle)
+        // 3. L3 (Sprint) & R3 (Quick 180 Turn if moving backwards, else Sneak Toggle)
         if (justPressed(buttons, SDLGamepad.SDL_GAMEPAD_BUTTON_LEFT_STICK)) {
             sprintToggled = !sprintToggled;
         }
         if (justPressed(buttons, SDLGamepad.SDL_GAMEPAD_BUTTON_RIGHT_STICK)) {
-            sneakToggled = !sneakToggled;
-            client.options.keyShift.setDown(sneakToggled);
+            if (moveBack && client.player != null) {
+                // Quick 180° turnaround shortcut
+                client.player.setYRot(client.player.getYRot() + 180.0f);
+                client.player.yRotO += 180.0f;
+            } else {
+                sneakToggled = !sneakToggled;
+                client.options.keyShift.setDown(sneakToggled);
+            }
         }
 
         // 4. Bumpers (L1/LB & R1/RB): Cycle Hotbar Slots
@@ -309,6 +320,77 @@ public class VicControllerService {
                 && client.gui.screen() != null) {
             client.gui.screen().onClose();
         }
+    }
+
+    public static void renderTick(Minecraft client) {
+        if (!VicConfig.get().enableController || activeGamepad == 0) {
+            return;
+        }
+        if (isExternalControllerModLoaded()) {
+            return;
+        }
+
+        long now = System.nanoTime();
+        float dt = (lastFrameTimeNs > 0) ? (float) ((now - lastFrameTimeNs) / 1_000_000_000.0) : 0.016f;
+        lastFrameTimeNs = now;
+        dt = Mth.clamp(dt, 0.001f, 0.05f);
+
+        if (client.player == null || client.gui.screen() != null) {
+            turnAroundHoldSeconds = 0.0f;
+            return;
+        }
+
+        SDLGamepad.SDL_UpdateGamepads();
+        if (!SDLGamepad.SDL_GamepadConnected(activeGamepad)) {
+            return;
+        }
+
+        float deadzone = Mth.clamp(VicConfig.get().controllerDeadzone, 0.05f, 0.45f);
+        float rx = applyDeadzone(SDLGamepad.SDL_GetGamepadAxis(activeGamepad, SDLGamepad.SDL_GAMEPAD_AXIS_RIGHTX) / 32767.0f, deadzone);
+        float ry = applyDeadzone(SDLGamepad.SDL_GetGamepadAxis(activeGamepad, SDLGamepad.SDL_GAMEPAD_AXIS_RIGHTY) / 32767.0f, deadzone);
+
+        if (Math.abs(rx) > 0.001f || Math.abs(ry) > 0.001f) {
+            applyCameraRotation(client, rx, ry, dt);
+        } else {
+            turnAroundHoldSeconds = 0.0f;
+        }
+    }
+
+    private static void applyCameraRotation(Minecraft client, float rx, float ry, float dt) {
+        if (client.player == null) return;
+
+        float absRx = Math.abs(rx);
+        float absRy = Math.abs(ry);
+
+        // Power curve 1.45 for fine crosshair control on small-to-medium deflections
+        float curvedRx = (float) Math.pow(absRx, 1.45) * Math.signum(rx);
+        float curvedRy = (float) Math.pow(absRy, 1.45) * Math.signum(ry);
+
+        // Progressive Yaw Boost when turning around: kicks in at |rx| > 0.82
+        float yawBoost = 1.0f;
+        if (absRx > 0.82f) {
+            float edgeFactor = (absRx - 0.82f) / 0.18f; // 0.0 to 1.0
+            turnAroundHoldSeconds += dt;
+            float ramp = Math.min(1.0f, turnAroundHoldSeconds / 0.15f);
+            yawBoost += edgeFactor * (1.4f + 1.8f * ramp);
+        } else {
+            turnAroundHoldSeconds = 0.0f;
+        }
+
+        float sens = Mth.clamp(VicConfig.get().controllerSensitivity, 1.0f, 25.0f);
+        float sensMultiplier = sens / 5.0f;
+
+        // Base horizontal speed: 220 deg/sec at sens=5.0, accelerating up to ~920 deg/sec on full deflection
+        float yawDegreesPerSec = curvedRx * 220.0f * yawBoost * sensMultiplier;
+        // Pitch scaled by 0.70x for stable horizontal aiming without vertical drift
+        float pitchDegreesPerSec = curvedRy * 155.0f * sensMultiplier;
+
+        // In Minecraft Entity.turn(dx, dy):
+        // yRot += dx * 0.15f; xRot += dy * 0.15f;
+        float dx = (yawDegreesPerSec * dt) / 0.15f;
+        float dy = (pitchDegreesPerSec * dt) / 0.15f;
+
+        client.player.turn(dx, dy);
     }
 
     public static boolean quickToggleFlashlight(Minecraft client) {

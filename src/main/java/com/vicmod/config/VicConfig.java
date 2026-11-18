@@ -16,7 +16,7 @@ public class VicConfig {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Path CONFIG_PATH = FabricLoader.getInstance().getConfigDir().resolve("vic.json");
 
-    private static VicConfig INSTANCE;
+    private static volatile VicConfig INSTANCE;
 
     // Default to local Ollama LLM out of the box
     // AI Provider: "OLLAMA", "SCRIPTED", or "OPENAI"
@@ -221,11 +221,20 @@ public class VicConfig {
         }
     }
 
-    public static void save() {
+    public static synchronized void save() {
         try {
-            Files.createDirectories(CONFIG_PATH.getParent());
-            try (Writer writer = Files.newBufferedWriter(CONFIG_PATH)) {
+            Path parent = CONFIG_PATH.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            Path tempPath = CONFIG_PATH.resolveSibling(CONFIG_PATH.getFileName().toString() + ".tmp");
+            try (Writer writer = Files.newBufferedWriter(tempPath)) {
                 GSON.toJson(get(), writer);
+            }
+            try {
+                Files.move(tempPath, CONFIG_PATH, java.nio.file.StandardCopyOption.ATOMIC_MOVE, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            } catch (java.io.IOException moveEx) {
+                Files.move(tempPath, CONFIG_PATH, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             }
         } catch (IOException e) {
             VicMod.LOGGER.error("Failed to save vic.json config", e);

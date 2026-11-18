@@ -91,7 +91,9 @@ ollama pull llama3.2:1b     # Recommended for Low-End / Integrated Graphics
     - **Quick-Toggle Flashlight** (`G` / **D-Pad Down**)
     - **Open Vic Config Menu** (`V` / **D-Pad Right**)
 - **Built-in Fallback Mode**: Even without an external controller mod installed, connecting a **PS5 DualSense** or **Xbox Controller** (USB or Bluetooth) enables built-in gamepad support:
-  - **Left Stick / Right Stick**: Movement & smooth camera look (`L3` = Sprint toggle, `R3` = Sneak toggle).
+  - **Left Stick / Right Stick**: Movement & responsive camera look with per-frame rendering and **progressive turn-around acceleration** (180° turnaround in ~0.25–0.4s).
+    - `L3`: Sprint toggle.
+    - `R3`: Sneak toggle (or **Pull Left Stick Back + Click R3** for an instant **Quick 180° Turn**).
   - **R2 / RT**: Attack / Mine | **L2 / LT**: Use Item / Unbox Vic / Toggle Flashlight.
   - **L1 / LB & R1 / RB**: Cycle Hotbar slots.
   - **Cross (PS5) / A (Xbox)**: Jump (or click buttons in menus).
