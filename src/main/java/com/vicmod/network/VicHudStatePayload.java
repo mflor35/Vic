@@ -3,15 +3,15 @@ package com.vicmod.network;
 import com.vicmod.VicMod;
 import com.vicmod.config.VicConfig;
 import com.vicmod.state.VicWorldState;
+import io.netty.buffer.ByteBuf;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.codec.PacketCodecs;
-import net.minecraft.network.packet.CustomPayload;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.util.Identifier;
+import net.minecraft.server.level.ServerPlayer;
 
 public record VicHudStatePayload(
         boolean countdownActive,
@@ -20,31 +20,33 @@ public record VicHudStatePayload(
         int karma,
         int stage,
         boolean demonAwakened
-) implements CustomPayload {
-    public static final Id<VicHudStatePayload> ID = new Id<>(Identifier.of(VicMod.MOD_ID, "hud_state"));
+) implements CustomPacketPayload {
+    public static final CustomPacketPayload.Type<VicHudStatePayload> TYPE = new CustomPacketPayload.Type<>(
+            Identifier.fromNamespaceAndPath(VicMod.MOD_ID, "hud_state")
+    );
 
-    public static final PacketCodec<RegistryByteBuf, VicHudStatePayload> CODEC = PacketCodec.tuple(
-            PacketCodecs.BOOL, VicHudStatePayload::countdownActive,
-            PacketCodecs.VAR_INT, VicHudStatePayload::currentDay,
-            PacketCodecs.VAR_INT, VicHudStatePayload::maxDays,
-            PacketCodecs.VAR_INT, VicHudStatePayload::karma,
-            PacketCodecs.VAR_INT, VicHudStatePayload::stage,
-            PacketCodecs.BOOL, VicHudStatePayload::demonAwakened,
+    public static final StreamCodec<ByteBuf, VicHudStatePayload> STREAM_CODEC = StreamCodec.composite(
+            ByteBufCodecs.BOOL, VicHudStatePayload::countdownActive,
+            ByteBufCodecs.VAR_INT, VicHudStatePayload::currentDay,
+            ByteBufCodecs.VAR_INT, VicHudStatePayload::maxDays,
+            ByteBufCodecs.VAR_INT, VicHudStatePayload::karma,
+            ByteBufCodecs.VAR_INT, VicHudStatePayload::stage,
+            ByteBufCodecs.BOOL, VicHudStatePayload::demonAwakened,
             VicHudStatePayload::new
     );
 
     @Override
-    public Id<? extends CustomPayload> getId() {
-        return ID;
+    public Type<? extends CustomPacketPayload> type() {
+        return TYPE;
     }
 
     public static void register() {
-        PayloadTypeRegistry.playS2C().register(ID, CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(TYPE, STREAM_CODEC);
     }
 
     public static VicHudStatePayload fromState(VicWorldState state) {
         int maxDays = Math.max(1, VicConfig.get().countdownDays);
-        int stage = state.isDemonDefeated() ? 5 : state.computeStage(maxDays);
+        int stage = state.isDemonDefeated() ? 5 : state.getCorruptionStage();
         return new VicHudStatePayload(
                 state.isCountdownActive(),
                 state.getCurrentDay(),
@@ -55,8 +57,8 @@ public record VicHudStatePayload(
         );
     }
 
-    public static void sendTo(ServerPlayerEntity player, VicWorldState state) {
-        if (player != null && state != null && ServerPlayNetworking.canSend(player, ID)) {
+    public static void sendTo(ServerPlayer player, VicWorldState state) {
+        if (player != null && state != null && ServerPlayNetworking.canSend(player, TYPE)) {
             ServerPlayNetworking.send(player, fromState(state));
         }
     }
@@ -64,8 +66,8 @@ public record VicHudStatePayload(
     public static void broadcast(MinecraftServer server, VicWorldState state) {
         if (server == null || state == null) return;
         VicHudStatePayload payload = fromState(state);
-        for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-            if (ServerPlayNetworking.canSend(player, ID)) {
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            if (ServerPlayNetworking.canSend(player, TYPE)) {
                 ServerPlayNetworking.send(player, payload);
             }
         }

@@ -4,84 +4,86 @@ import com.vicmod.registry.ModEntities;
 import com.vicmod.state.VicWorldState;
 import com.vicmod.network.VicHudStatePayload;
 import com.vicmod.network.VicSpeechPayload;
-import net.minecraft.entity.EntityType;
-import net.minecraft.entity.attribute.DefaultAttributeContainer;
-import net.minecraft.entity.attribute.EntityAttributes;
-import net.minecraft.entity.damage.DamageSource;
-import net.minecraft.entity.data.DataTracker;
-import net.minecraft.entity.data.TrackedData;
-import net.minecraft.entity.data.TrackedDataHandlerRegistry;
-import net.minecraft.entity.mob.MobEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.particle.ParticleTypes;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.sound.SoundCategory;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.text.Text;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Formatting;
-import net.minecraft.util.Hand;
-import net.minecraft.world.World;
+import net.minecraft.ChatFormatting;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntitySpawnReason;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.storage.ValueInput;
+import net.minecraft.world.level.storage.ValueOutput;
 
-public class VicBoxEntity extends MobEntity {
-    private static final TrackedData<Boolean> UNBOXING = DataTracker.registerData(VicBoxEntity.class, TrackedDataHandlerRegistry.BOOLEAN);
-    private static final TrackedData<Integer> UNBOX_TICKS = DataTracker.registerData(VicBoxEntity.class, TrackedDataHandlerRegistry.INTEGER);
+public class VicBoxEntity extends Mob {
+    private static final EntityDataAccessor<Boolean> UNBOXING = SynchedEntityData.defineId(VicBoxEntity.class, EntityDataSerializers.BOOLEAN);
+    private static final EntityDataAccessor<Integer> UNBOX_TICKS = SynchedEntityData.defineId(VicBoxEntity.class, EntityDataSerializers.INT);
 
-    public VicBoxEntity(EntityType<? extends MobEntity> entityType, World world) {
-        super(entityType, world);
-        this.setPersistent();
+    public VicBoxEntity(EntityType<? extends Mob> entityType, Level level) {
+        super(entityType, level);
+        this.setPersistenceRequired();
     }
 
-    public static DefaultAttributeContainer.Builder createBoxAttributes() {
-        return MobEntity.createMobAttributes()
-                .add(EntityAttributes.GENERIC_MAX_HEALTH, 40.0)
-                .add(EntityAttributes.GENERIC_MOVEMENT_SPEED, 0.0)
-                .add(EntityAttributes.GENERIC_KNOCKBACK_RESISTANCE, 1.0);
+    public static AttributeSupplier.Builder createBoxAttributes() {
+        return Mob.createMobAttributes()
+                .add(Attributes.MAX_HEALTH, 40.0)
+                .add(Attributes.MOVEMENT_SPEED, 0.0)
+                .add(Attributes.KNOCKBACK_RESISTANCE, 1.0);
     }
 
     @Override
-    protected void initDataTracker(DataTracker.Builder builder) {
-        super.initDataTracker(builder);
-        builder.add(UNBOXING, false);
-        builder.add(UNBOX_TICKS, 0);
+    protected void defineSynchedData(SynchedEntityData.Builder builder) {
+        super.defineSynchedData(builder);
+        builder.define(UNBOXING, false);
+        builder.define(UNBOX_TICKS, 0);
     }
 
     public boolean isUnboxing() {
-        return this.dataTracker.get(UNBOXING);
+        return this.entityData.get(UNBOXING);
     }
 
     public int getUnboxTicks() {
-        return this.dataTracker.get(UNBOX_TICKS);
+        return this.entityData.get(UNBOX_TICKS);
     }
 
     @Override
-    protected ActionResult interactMob(PlayerEntity player, Hand hand) {
-        if (hand != Hand.MAIN_HAND) {
-            return ActionResult.PASS;
+    protected InteractionResult mobInteract(Player player, InteractionHand hand) {
+        if (hand != InteractionHand.MAIN_HAND) {
+            return InteractionResult.PASS;
         }
-        if (!this.getWorld().isClient && !isUnboxing()) {
-            this.dataTracker.set(UNBOXING, true);
-            this.dataTracker.set(UNBOX_TICKS, 1);
-            this.getWorld().playSound(null, this.getBlockPos(), SoundEvents.BLOCK_CHEST_OPEN, SoundCategory.BLOCKS, 1.0f, 0.9f);
-            player.sendMessage(Text.literal("[Delivery Box] Unsealing package: VIC-UNIT-01...").formatted(Formatting.YELLOW), true);
+        if (!this.level().isClientSide() && !isUnboxing()) {
+            this.entityData.set(UNBOXING, true);
+            this.entityData.set(UNBOX_TICKS, 1);
+            this.level().playSound(null, this.blockPosition(), SoundEvents.CHEST_OPEN, SoundSource.BLOCKS, 1.0f, 0.9f);
+            player.sendOverlayMessage(Component.literal("[Delivery Box] Unsealing package: VIC-UNIT-01...").withStyle(ChatFormatting.YELLOW));
         }
-        return ActionResult.success(this.getWorld().isClient);
+        return InteractionResult.SUCCESS;
     }
 
     @Override
     public void tick() {
         super.tick();
-        if (!this.getWorld().isClient && this.getWorld() instanceof ServerWorld serverWorld) {
-            VicWorldState state = VicWorldState.getServerState(serverWorld.getServer());
-            if (!state.tryClaimSingletonVic(serverWorld.getServer(), this)) {
-                PlayerEntity nearest = serverWorld.getClosestPlayer(this, 16.0);
+        if (!this.level().isClientSide() && this.level() instanceof ServerLevel serverLevel) {
+            VicWorldState state = VicWorldState.getServerState(serverLevel.getServer());
+            if (!state.tryClaimSingletonVic(serverLevel.getServer(), this)) {
+                Player nearest = serverLevel.getNearestPlayer(this, 16.0);
                 if (nearest != null) {
-                    nearest.sendMessage(
-                            Text.literal("[Vic System] ").formatted(Formatting.RED, Formatting.BOLD)
-                                    .append(Text.literal("Only one Vic character is allowed per world!").formatted(Formatting.YELLOW)),
-                            true
+                    nearest.sendOverlayMessage(
+                            Component.literal("[Vic System] ").withStyle(ChatFormatting.RED, ChatFormatting.BOLD)
+                                    .append(Component.literal("Only one Vic character is allowed per world!").withStyle(ChatFormatting.YELLOW))
                     );
                 }
                 this.discard();
@@ -91,89 +93,87 @@ public class VicBoxEntity extends MobEntity {
 
         if (isUnboxing()) {
             int ticks = getUnboxTicks() + 1;
-            this.dataTracker.set(UNBOX_TICKS, ticks);
+            this.entityData.set(UNBOX_TICKS, ticks);
 
-            if (this.getWorld().isClient) {
-                this.getWorld().addParticle(ParticleTypes.END_ROD,
+            if (this.level().isClientSide()) {
+                this.level().addParticle(ParticleTypes.END_ROD,
                         this.getX() + (this.random.nextDouble() - 0.5) * 0.9,
                         this.getY() + 0.5 + this.random.nextDouble() * 0.6,
                         this.getZ() + (this.random.nextDouble() - 0.5) * 0.9,
                         0.0, 0.05, 0.0);
-            } else if (this.getWorld() instanceof ServerWorld serverWorld) {
+            } else if (this.level() instanceof ServerLevel serverLevel) {
                 if (ticks % 10 == 0 && ticks < 60) {
-                    serverWorld.playSound(null, this.getBlockPos(), SoundEvents.BLOCK_NOTE_BLOCK_PLING.value(), SoundCategory.BLOCKS, 0.8f, 0.8f + (ticks / 60.0f));
+                    serverLevel.playSound(null, this.blockPosition(), SoundEvents.NOTE_BLOCK_PLING.value(), SoundSource.BLOCKS, 0.8f, 0.8f + (ticks / 60.0f));
                 }
                 if (ticks >= 60) {
-                    completeUnbox(serverWorld);
+                    completeUnbox(serverLevel);
                 }
             }
         }
     }
 
-    private void completeUnbox(ServerWorld serverWorld) {
-        serverWorld.spawnParticles(ParticleTypes.TOTEM_OF_UNDYING, this.getX(), this.getY() + 0.8, this.getZ(), 35, 0.4, 0.4, 0.4, 0.15);
-        serverWorld.playSound(null, this.getBlockPos(), SoundEvents.ENTITY_PLAYER_LEVELUP, SoundCategory.NEUTRAL, 1.0f, 1.2f);
+    private void completeUnbox(ServerLevel serverLevel) {
+        serverLevel.sendParticles(ParticleTypes.TOTEM_OF_UNDYING, this.getX(), this.getY() + 0.8, this.getZ(), 35, 0.4, 0.4, 0.4, 0.15);
+        serverLevel.playSound(null, this.blockPosition(), SoundEvents.PLAYER_LEVELUP, SoundSource.NEUTRAL, 1.0f, 1.2f);
 
-        VicWorldState state = VicWorldState.getServerState(serverWorld.getServer());
-        VicEntity vic = ModEntities.VIC.create(serverWorld);
+        VicWorldState state = VicWorldState.getServerState(serverLevel.getServer());
+        VicEntity vic = ModEntities.VIC.create(serverLevel, EntitySpawnReason.EVENT);
         if (vic != null) {
-            vic.refreshPositionAndAngles(this.getX(), this.getY() + 0.6, this.getZ(), this.getYaw(), 0.0f);
+            vic.snapTo(this.getX(), this.getY() + 0.6, this.getZ(), this.getYRot(), 0.0f);
             state.transferSingletonVic(this, vic);
 
-            PlayerEntity nearest = serverWorld.getClosestPlayer(this, 32.0);
+            Player nearest = serverLevel.getNearestPlayer(this, 32.0);
             if (nearest != null) {
-                vic.setOwnerUuid(nearest.getUuid());
+                vic.setOwnerUuid(nearest.getUUID());
                 String greeting = "Hiya bestie! I'm Vic, your brand-new spherical virtual assistant! Just type in chat or hold R to talk to me!";
-                nearest.sendMessage(
-                        Text.literal("<Vic> ").formatted(Formatting.YELLOW, Formatting.BOLD)
-                                .append(Text.literal(greeting).formatted(Formatting.WHITE)),
-                        false
+                nearest.sendSystemMessage(
+                        Component.literal("<Vic> ").withStyle(ChatFormatting.YELLOW, ChatFormatting.BOLD)
+                                .append(Component.literal(greeting).withStyle(ChatFormatting.WHITE))
                 );
-                if (nearest instanceof ServerPlayerEntity serverPlayer) {
+                if (nearest instanceof ServerPlayer serverPlayer) {
                     VicSpeechPayload.sendTo(serverPlayer, greeting, 0);
                 }
             }
-            serverWorld.spawnEntity(vic);
+            serverLevel.addFreshEntity(vic);
         }
 
-        state.activateCountdown(serverWorld.getTimeOfDay());
-        VicHudStatePayload.broadcast(serverWorld.getServer(), state);
+        state.activateCountdown(serverLevel.getOverworldClockTime());
+        VicHudStatePayload.broadcast(serverLevel.getServer(), state);
         this.discard();
     }
 
     @Override
-    public void onRemoved() {
-        super.onRemoved();
-        if (!this.getWorld().isClient && this.getWorld() instanceof ServerWorld serverWorld) {
-            RemovalReason reason = this.getRemovalReason();
+    public void remove(Entity.RemovalReason reason) {
+        super.remove(reason);
+        if (!this.level().isClientSide() && this.level() instanceof ServerLevel serverLevel) {
             if (reason == RemovalReason.KILLED || reason == RemovalReason.DISCARDED) {
-                VicWorldState.getServerState(serverWorld.getServer()).releaseSingletonVic(this);
+                VicWorldState.getServerState(serverLevel.getServer()).releaseSingletonVic(this);
             }
         }
     }
 
     @Override
-    public boolean damage(DamageSource source, float amount) {
-        if (!this.getWorld().isClient && source.getAttacker() instanceof PlayerEntity player && !isUnboxing()) {
-            this.dataTracker.set(UNBOXING, true);
-            this.dataTracker.set(UNBOX_TICKS, 1);
-            player.sendMessage(Text.literal("[Delivery Box] Impact detected! Auto-opening package...").formatted(Formatting.GOLD), true);
+    public boolean hurtServer(ServerLevel serverLevel, DamageSource source, float amount) {
+        if (!this.level().isClientSide() && source.getEntity() instanceof Player player && !isUnboxing()) {
+            this.entityData.set(UNBOXING, true);
+            this.entityData.set(UNBOX_TICKS, 1);
+            player.sendOverlayMessage(Component.literal("[Delivery Box] Impact detected! Auto-opening package...").withStyle(ChatFormatting.GOLD));
             return false;
         }
-        return super.damage(source, amount);
+        return super.hurtServer(serverLevel, source, amount);
     }
 
     @Override
-    public void writeCustomDataToNbt(NbtCompound nbt) {
-        super.writeCustomDataToNbt(nbt);
-        nbt.putBoolean("Unboxing", isUnboxing());
-        nbt.putInt("UnboxTicks", getUnboxTicks());
+    protected void addAdditionalSaveData(ValueOutput output) {
+        super.addAdditionalSaveData(output);
+        output.putBoolean("Unboxing", isUnboxing());
+        output.putInt("UnboxTicks", getUnboxTicks());
     }
 
     @Override
-    public void readCustomDataFromNbt(NbtCompound nbt) {
-        super.readCustomDataFromNbt(nbt);
-        this.dataTracker.set(UNBOXING, nbt.getBoolean("Unboxing"));
-        this.dataTracker.set(UNBOX_TICKS, nbt.getInt("UnboxTicks"));
+    protected void readAdditionalSaveData(ValueInput input) {
+        super.readAdditionalSaveData(input);
+        this.entityData.set(UNBOXING, input.getBooleanOr("Unboxing", false));
+        this.entityData.set(UNBOX_TICKS, input.getIntOr("UnboxTicks", 0));
     }
 }

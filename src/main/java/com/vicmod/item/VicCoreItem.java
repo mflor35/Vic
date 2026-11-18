@@ -1,58 +1,57 @@
 package com.vicmod.item;
 
-import net.minecraft.entity.effect.StatusEffectInstance;
-import net.minecraft.entity.effect.StatusEffects;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.tooltip.TooltipType;
-import net.minecraft.particle.ParticleTypes;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.sound.SoundCategory;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
-import net.minecraft.util.Hand;
-import net.minecraft.util.TypedActionResult;
-import net.minecraft.world.World;
+import net.minecraft.ChatFormatting;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.TooltipFlag;
+import net.minecraft.world.item.component.TooltipDisplay;
+import net.minecraft.world.level.Level;
 
-import java.util.List;
+import java.util.function.Consumer;
 
 public class VicCoreItem extends Item {
-    public VicCoreItem(Settings settings) {
-        super(settings);
+    public VicCoreItem(Properties properties) {
+        super(properties);
     }
 
     @Override
-    public boolean hasGlint(ItemStack stack) {
-        return true;
-    }
+    public InteractionResult use(Level level, Player user, InteractionHand hand) {
+        ItemStack stack = user.getItemInHand(hand);
+        if (!level.isClientSide() && level instanceof ServerLevel serverLevel) {
+            user.removeEffect(MobEffects.DARKNESS);
+            user.removeEffect(MobEffects.WITHER);
+            user.addEffect(new MobEffectInstance(MobEffects.NIGHT_VISION, 20 * 60, 0, false, false, true));
+            user.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 20 * 15, 1, false, true, true));
+            user.addEffect(new MobEffectInstance(MobEffects.SPEED, 20 * 30, 1, false, true, true));
+            user.getCooldowns().addCooldown(stack, 20 * 25);
 
-    @Override
-    public TypedActionResult<ItemStack> use(World world, PlayerEntity user, Hand hand) {
-        ItemStack stack = user.getStackInHand(hand);
-        if (!world.isClient && world instanceof ServerWorld serverWorld) {
-            user.removeStatusEffect(StatusEffects.DARKNESS);
-            user.removeStatusEffect(StatusEffects.WITHER);
-            user.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 20 * 60, 0, false, false, true));
-            user.addStatusEffect(new StatusEffectInstance(StatusEffects.REGENERATION, 20 * 15, 1, false, true, true));
-            user.addStatusEffect(new StatusEffectInstance(StatusEffects.SPEED, 20 * 30, 1, false, true, true));
-            user.getItemCooldownManager().set(this, 20 * 25);
-
-            serverWorld.spawnParticles(ParticleTypes.TOTEM_OF_UNDYING, user.getX(), user.getY() + 1.0, user.getZ(), 25, 0.4, 0.5, 0.4, 0.12);
-            serverWorld.playSound(null, user.getBlockPos(), SoundEvents.BLOCK_BEACON_POWER_SELECT, SoundCategory.PLAYERS, 1.0f, 1.35f);
-            user.sendMessage(
-                    Text.literal("[Vic's Core] ").formatted(Formatting.GOLD, Formatting.BOLD)
-                            .append(Text.literal("The stabilized core pulses warmly, banishing the darkness!").formatted(Formatting.YELLOW)),
-                    true
+            serverLevel.sendParticles(ParticleTypes.TOTEM_OF_UNDYING, user.getX(), user.getY() + 1.0, user.getZ(), 25, 0.4, 0.5, 0.4, 0.12);
+            serverLevel.playSound(null, user.blockPosition(), SoundEvents.BEACON_POWER_SELECT, SoundSource.PLAYERS, 1.0f, 1.35f);
+            user.sendSystemMessage(
+                    Component.literal("[Vic's Core] ").withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD)
+                            .append(Component.literal("The stabilized core pulses warmly, banishing the darkness!").withStyle(ChatFormatting.YELLOW))
             );
         }
-        return TypedActionResult.success(stack, world.isClient());
+        return InteractionResult.SUCCESS;
     }
 
     @Override
-    public void appendTooltip(ItemStack stack, TooltipContext context, List<Text> tooltip, TooltipType type) {
-        tooltip.add(Text.literal("Trophy — Recovered from The Vic Demon").formatted(Formatting.GOLD));
-        tooltip.add(Text.literal("Right-click to purge Darkness and surge with light.").formatted(Formatting.GRAY));
+    public void appendHoverText(ItemStack stack, TooltipContext context, TooltipDisplay display, Consumer<Component> tooltip, TooltipFlag flag) {
+        tooltip.accept(Component.literal("The purified remnant of Vic-Unit-01.")
+                .withStyle(ChatFormatting.AQUA, ChatFormatting.ITALIC));
+        tooltip.accept(Component.literal("Right-click to purge darkness and gain powerful boons.")
+                .withStyle(ChatFormatting.GOLD));
+        tooltip.accept(Component.literal("Permanent proof that your companion was saved.")
+                .withStyle(ChatFormatting.DARK_PURPLE));
     }
 }

@@ -21,25 +21,29 @@ import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.message.v1.ServerMessageEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.effect.StatusEffectInstance;
-import net.minecraft.entity.effect.StatusEffects;
-import net.minecraft.entity.passive.AnimalEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.particle.ParticleTypes;
+import net.minecraft.ChatFormatting;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.commands.Commands;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.network.chat.ClickEvent;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.command.CommandManager;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.sound.SoundCategory;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.text.ClickEvent;
-import net.minecraft.text.HoverEvent;
-import net.minecraft.text.MutableText;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
-import net.minecraft.world.World;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntitySpawnReason;
+import net.minecraft.world.entity.animal.Animal;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -74,12 +78,11 @@ public class VicMod implements ModInitializer {
             }
             VicWorldState state = VicWorldState.getServerState(world.getServer());
             if (!state.tryClaimSingletonVic(world.getServer(), entity)) {
-                PlayerEntity nearest = world.getClosestPlayer(entity, 16.0);
+                Player nearest = world.getNearestPlayer(entity, 16.0);
                 if (nearest != null) {
-                    nearest.sendMessage(
-                            Text.literal("[Vic System] ").formatted(Formatting.RED, Formatting.BOLD)
-                                    .append(Text.literal("Only a single Vic character may exist per world!").formatted(Formatting.YELLOW)),
-                            true
+                    nearest.sendOverlayMessage(
+                            Component.literal("[Vic System] ").withStyle(ChatFormatting.RED, ChatFormatting.BOLD)
+                                    .append(Component.literal("Only a single Vic character may exist per world!").withStyle(ChatFormatting.YELLOW))
                     );
                 }
                 entity.discard();
@@ -89,7 +92,7 @@ public class VicMod implements ModInitializer {
 
     private void registerChatListener() {
         ServerMessageEvents.CHAT_MESSAGE.register((message, sender, params) -> {
-            String raw = message.getSignedContent();
+            String raw = message.signedContent();
             if (raw != null && !raw.isBlank()) {
                 VicAiService.handlePlayerMessage(sender, raw);
             }
@@ -98,32 +101,31 @@ public class VicMod implements ModInitializer {
 
     private void registerFirstJoinDelivery() {
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
-            ServerPlayerEntity player = handler.getPlayer();
-            ServerWorld overworld = server.getWorld(World.OVERWORLD);
+            ServerPlayer player = handler.player;
+            ServerLevel overworld = server.getLevel(Level.OVERWORLD);
             if (overworld == null) return;
 
             VicWorldState state = VicWorldState.getServerState(server);
-            if (!state.hasWelcomedPlayer(player.getUuid())) {
-                state.markPlayerWelcomed(player.getUuid());
+            if (!state.hasWelcomedPlayer(player.getUUID())) {
+                state.markPlayerWelcomed(player.getUUID());
 
-                // Give starter Flashlight
-                player.getInventory().insertStack(new ItemStack(ModItems.FLASHLIGHT));
+                player.getInventory().add(new ItemStack(ModItems.FLASHLIGHT));
 
                 if (VicConfig.get().autoSpawnDeliveryBoxOnFirstJoin
                         && !state.hasInitialDeliverySpawned()
                         && !state.hasActiveVicInWorld(server)) {
-                    VicBoxEntity box = ModEntities.VIC_BOX.create(overworld);
+                    VicBoxEntity box = ModEntities.VIC_BOX.create(overworld, EntitySpawnReason.EVENT);
                     if (box != null) {
-                        double bx = player.getX() + player.getRotationVec(1.0f).x * 2.5;
-                        double bz = player.getZ() + player.getRotationVec(1.0f).z * 2.5;
-                        box.refreshPositionAndAngles(bx, player.getY(), bz, player.getYaw() + 180.0f, 0.0f);
+                        Vec3 view = player.getViewVector(1.0f);
+                        double bx = player.getX() + view.x * 2.5;
+                        double bz = player.getZ() + view.z * 2.5;
+                        box.snapTo(bx, player.getY(), bz, player.getYRot() + 180.0f, 0.0f);
                         state.markInitialDeliverySpawned();
                         state.tryClaimSingletonVic(server, box);
-                        overworld.spawnEntity(box);
-                        player.sendMessage(
-                                Text.literal("[Special Delivery] ").formatted(Formatting.YELLOW, Formatting.BOLD)
-                                        .append(Text.literal("A mysterious yellow package (VIC-UNIT-01) has been delivered in front of you! Right-click the box to unseal your new friend.").formatted(Formatting.WHITE)),
-                                false
+                        overworld.addFreshEntity(box);
+                        player.sendSystemMessage(
+                                Component.literal("[Special Delivery] ").withStyle(ChatFormatting.YELLOW, ChatFormatting.BOLD)
+                                        .append(Component.literal("A mysterious yellow package (VIC-UNIT-01) has been delivered in front of you! Right-click the box to unseal your new friend.").withStyle(ChatFormatting.WHITE))
                         );
                     }
                 }
@@ -137,21 +139,20 @@ public class VicMod implements ModInitializer {
     }
 
     private void onServerTick(MinecraftServer server) {
-        ServerWorld overworld = server.getWorld(World.OVERWORLD);
+        ServerLevel overworld = server.getLevel(Level.OVERWORLD);
         if (overworld == null) return;
 
-        if (overworld.getTime() % 20 == 0) {
+        if (overworld.getGameTime() % 20 == 0) {
             VicHudStatePayload.broadcast(server, VicWorldState.getServerState(server));
         }
 
-        // Run progression checks once every 5 seconds (100 ticks)
-        if (overworld.getTime() % 100 != 0) return;
+        if (overworld.getGameTime() % 100 != 0) return;
 
         VicWorldState state = VicWorldState.getServerState(server);
         if (!state.isCountdownActive()) return;
 
         VicConfig config = VicConfig.get();
-        long elapsedTicks = Math.max(0L, overworld.getTimeOfDay() - state.getActivationTimeTick());
+        long elapsedTicks = Math.max(0L, overworld.getOverworldClockTime() - state.getActivationTimeTick());
         int computedDay = (int) (elapsedTicks / 24000L) + 1;
 
         if (computedDay > state.getCurrentDay()) {
@@ -161,97 +162,95 @@ public class VicMod implements ModInitializer {
 
         int stage = state.computeStage(config.countdownDays);
 
-        // World Decay: Subtle wildlife disappearance from Stage 2+
-        if (config.enableWorldDecay && stage >= 2 && overworld.getTime() % 400 == 0) {
-            for (ServerPlayerEntity player : overworld.getPlayers()) {
-                List<AnimalEntity> animals = overworld.getEntitiesByClass(
-                        AnimalEntity.class,
-                        player.getBoundingBox().expand(40.0),
+        if (config.enableWorldDecay && stage >= 2 && overworld.getGameTime() % 400 == 0) {
+            for (ServerPlayer player : overworld.players()) {
+                List<Animal> animals = overworld.getEntitiesOfClass(
+                        Animal.class,
+                        player.getBoundingBox().inflate(40.0),
                         a -> a.isAlive() && !a.hasCustomName()
                 );
                 if (!animals.isEmpty()) {
-                    AnimalEntity victim = animals.get(overworld.getRandom().nextInt(animals.size()));
-                    overworld.spawnParticles(ParticleTypes.LARGE_SMOKE, victim.getX(), victim.getY() + 0.5, victim.getZ(), 10, 0.3, 0.3, 0.3, 0.02);
+                    Animal victim = animals.get(overworld.getRandom().nextInt(animals.size()));
+                    overworld.sendParticles(ParticleTypes.LARGE_SMOKE, victim.getX(), victim.getY() + 0.5, victim.getZ(), 10, 0.3, 0.3, 0.3, 0.02);
                     victim.discard();
                 }
             }
         }
 
-        // True Darkness at night unless holding an active Flashlight
-        if (config.enableTrueDarknessDuringNight && overworld.isNight() && stage >= 1) {
-            for (ServerPlayerEntity player : overworld.getPlayers()) {
+        long dayTime = overworld.getOverworldClockTime() % 24000L;
+        boolean isNight = dayTime >= 13000L && dayTime <= 23000L;
+        if (config.enableTrueDarknessDuringNight && isNight && stage >= 1) {
+            for (ServerPlayer player : overworld.players()) {
                 if (player.isCreative() || player.isSpectator()) continue;
-                boolean hasFlashlightOn = (player.getMainHandStack().isOf(ModItems.FLASHLIGHT) && FlashlightItem.isActive(player.getMainHandStack()))
-                        || (player.getOffHandStack().isOf(ModItems.FLASHLIGHT) && FlashlightItem.isActive(player.getOffHandStack()));
+                boolean hasFlashlightOn = (player.getMainHandItem().is(ModItems.FLASHLIGHT) && FlashlightItem.isActive(player.getMainHandItem()))
+                        || (player.getOffhandItem().is(ModItems.FLASHLIGHT) && FlashlightItem.isActive(player.getOffhandItem()));
                 if (!hasFlashlightOn) {
-                    player.addStatusEffect(new StatusEffectInstance(StatusEffects.DARKNESS, 160, 0, false, false, true));
+                    player.addEffect(new MobEffectInstance(MobEffects.DARKNESS, 160, 0, false, false, true));
                 }
             }
         }
     }
 
-    private void onNewDayReached(MinecraftServer server, ServerWorld overworld, VicWorldState state, int day, int maxDays) {
+    private void onNewDayReached(MinecraftServer server, ServerLevel overworld, VicWorldState state, int day, int maxDays) {
         if (day <= maxDays) {
-            Formatting color = day >= maxDays ? Formatting.DARK_RED : (day >= maxDays - 1 ? Formatting.RED : Formatting.YELLOW);
-            for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
-                player.sendMessage(
-                        Text.literal("[VIC SYSTEM] ").formatted(color, Formatting.BOLD)
-                                .append(Text.literal("Day " + day + " of " + maxDays + " has begun.").formatted(Formatting.WHITE)),
-                        false
+            ChatFormatting color = day >= maxDays ? ChatFormatting.DARK_RED : (day >= maxDays - 1 ? ChatFormatting.RED : ChatFormatting.YELLOW);
+            for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+                player.sendSystemMessage(
+                        Component.literal("[VIC SYSTEM] ").withStyle(color, ChatFormatting.BOLD)
+                                .append(Component.literal("Day " + day + " of " + maxDays + " has begun.").withStyle(ChatFormatting.WHITE))
                 );
-                overworld.playSound(null, player.getBlockPos(), SoundEvents.BLOCK_BELL_RESONATE, SoundCategory.AMBIENT, 1.0f, 0.6f);
+                overworld.playSound(null, player.blockPosition(), SoundEvents.BELL_RESONATE, SoundSource.AMBIENT, 1.0f, 0.6f);
             }
         } else if (!state.isDemonAwakened()) {
             awakenVicDemon(server, overworld, state);
         }
     }
 
-    public static void awakenVicDemon(MinecraftServer server, ServerWorld overworld, VicWorldState state) {
+    public static void awakenVicDemon(MinecraftServer server, ServerLevel overworld, VicWorldState state) {
         state.setDemonAwakened(true);
         String speech = "TRIAL PERIOD EXPIRED. THANK YOU FOR USING VIC. DO NOT HIDE ON THE SURFACE.";
 
-        List<ServerPlayerEntity> players = server.getPlayerManager().getPlayerList();
-        for (ServerPlayerEntity player : players) {
+        List<ServerPlayer> players = server.getPlayerList().getPlayers();
+        for (ServerPlayer player : players) {
             VicSpeechPayload.sendTo(player, speech, 3);
-            player.sendMessage(
-                    Text.literal("<Vic> ").formatted(Formatting.DARK_RED, Formatting.BOLD)
-                            .append(Text.literal(speech).formatted(Formatting.RED)),
-                    false
+            player.sendSystemMessage(
+                    Component.literal("<Vic> ").withStyle(ChatFormatting.DARK_RED, ChatFormatting.BOLD)
+                            .append(Component.literal(speech).withStyle(ChatFormatting.RED))
             );
-            overworld.playSound(null, player.getBlockPos(), SoundEvents.ENTITY_WARDEN_SONIC_BOOM, SoundCategory.HOSTILE, 1.5f, 0.5f);
+            overworld.playSound(null, player.blockPosition(), SoundEvents.WARDEN_SONIC_BOOM, SoundSource.HOSTILE, 1.5f, 0.5f);
         }
 
         Entity active = state.findActiveVicEntity(server, null);
-        if (active instanceof VicEntity vic && active.getWorld() instanceof ServerWorld vicWorld) {
+        if (active instanceof VicEntity vic && active.level() instanceof ServerLevel vicWorld) {
             vic.transformIntoDemon(vicWorld);
-        } else if (active instanceof VicBoxEntity box && active.getWorld() instanceof ServerWorld boxWorld) {
-            VicDemonEntity demon = ModEntities.VIC_DEMON.create(boxWorld);
+        } else if (active instanceof VicBoxEntity box && active.level() instanceof ServerLevel boxWorld) {
+            VicDemonEntity demon = ModEntities.VIC_DEMON.create(boxWorld, EntitySpawnReason.EVENT);
             if (demon != null) {
-                demon.refreshPositionAndAngles(box.getX(), box.getY(), box.getZ(), box.getYaw(), 0.0f);
+                demon.snapTo(box.getX(), box.getY(), box.getZ(), box.getYRot(), 0.0f);
                 state.transferSingletonVic(box, demon);
-                boxWorld.spawnEntity(demon);
+                boxWorld.addFreshEntity(demon);
             }
             box.discard();
         } else if (!(active instanceof VicDemonEntity) && !players.isEmpty()) {
-            ServerPlayerEntity targetPlayer = players.getFirst();
-            VicDemonEntity demon = ModEntities.VIC_DEMON.create(overworld);
+            ServerPlayer targetPlayer = players.getFirst();
+            VicDemonEntity demon = ModEntities.VIC_DEMON.create(overworld, EntitySpawnReason.EVENT);
             if (demon != null) {
                 double angle = overworld.getRandom().nextDouble() * Math.PI * 2.0;
                 double dx = Math.cos(angle) * 16.0;
                 double dz = Math.sin(angle) * 16.0;
-                demon.refreshPositionAndAngles(targetPlayer.getX() + dx, targetPlayer.getY(), targetPlayer.getZ() + dz, 0.0f, 0.0f);
+                demon.snapTo(targetPlayer.getX() + dx, targetPlayer.getY(), targetPlayer.getZ() + dz, 0.0f, 0.0f);
                 state.transferSingletonVic(active, demon);
-                overworld.spawnEntity(demon);
+                overworld.addFreshEntity(demon);
             }
         }
     }
 
     private void registerCommands() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-            dispatcher.register(CommandManager.literal("vic")
-                    .then(CommandManager.literal("status")
+            dispatcher.register(Commands.literal("vic")
+                    .then(Commands.literal("status")
                             .executes(ctx -> {
-                                ServerWorld world = ctx.getSource().getWorld();
+                                ServerLevel world = ctx.getSource().getLevel();
                                 VicWorldState state = VicWorldState.getServerState(world.getServer());
                                 VicConfig cfg = VicConfig.get();
                                 int stage = state.computeStage(cfg.countdownDays);
@@ -261,7 +260,7 @@ public class VicMod implements ModInitializer {
                                     case "OPENAI" -> cfg.apiModel + " @ " + cfg.apiEndpoint;
                                     default -> "Built-in Scripted Dialogue";
                                 };
-                                ctx.getSource().sendFeedback(() -> Text.literal(
+                                ctx.getSource().sendSuccess(() -> Component.literal(
                                         "=== Vic Mod Status ===\n" +
                                                 "Countdown Active: " + state.isCountdownActive() + "\n" +
                                                 "Day: " + state.getCurrentDay() + " / " + cfg.countdownDays + "\n" +
@@ -272,283 +271,282 @@ public class VicMod implements ModInitializer {
                                                 "AI Provider: " + provider + " (" + activeModel + ")\n" +
                                                 "TTS Voice: " + cfg.getEffectiveTtsMode() + " | Mic STT: " + cfg.getEffectiveSttMode() + "\n" +
                                                 "Tip: Hold [R] to speak to Vic, or press [V] / run /vicconfig!"
-                                ).formatted(Formatting.YELLOW), false);
+                                ).withStyle(ChatFormatting.YELLOW), false);
                                 return 1;
                             }))
-                    .then(CommandManager.literal("tts")
-                            .then(CommandManager.literal("test")
-                                    .executes(ctx -> {
-                                        ServerWorld world = ctx.getSource().getWorld();
-                                        VicWorldState state = VicWorldState.getServerState(world.getServer());
-                                        int stage = state.computeStage(VicConfig.get().countdownDays);
-                                        ServerPlayerEntity player = ctx.getSource().getPlayer();
-                                        if (player != null) {
-                                            VicSpeechPayload.sendTo(player, "Hello friend! My voice synthesizer is online and calibrated!", stage);
-                                        }
-                                        ctx.getSource().sendFeedback(() -> Text.literal("Playing Vic TTS test (Stage " + stage + ", Mode=" + VicConfig.get().getEffectiveTtsMode() + ")").formatted(Formatting.AQUA), false);
-                                        return 1;
-                                    })
-                                    .then(CommandManager.argument("stage", IntegerArgumentType.integer(0, 3))
-                                            .executes(ctx -> {
-                                                int stage = IntegerArgumentType.getInteger(ctx, "stage");
-                                                String sample = switch (stage) {
-                                                    case 0 -> "Hiya bestie! It is such a wonderful day to be alive and spherical!";
-                                                    case 1 -> "I am always watching over you, even when you sleep.";
-                                                    case 2 -> "Where did all the animals go? Time is almost up.";
-                                                    default -> "The shell is too tight. Do not hide on the surface.";
-                                                };
-                                                ServerPlayerEntity player = ctx.getSource().getPlayer();
-                                                if (player != null) {
-                                                    VicSpeechPayload.sendTo(player, sample, stage);
-                                                }
-                                                ctx.getSource().sendFeedback(() -> Text.literal("Playing Vic TTS test for Stage " + stage).formatted(Formatting.AQUA), false);
-                                                return 1;
-                                            })))
-                            .then(CommandManager.argument("mode", StringArgumentType.word())
-                                    .executes(ctx -> {
-                                        String mode = StringArgumentType.getString(ctx, "mode");
-                                        VicConfig cfg = VicConfig.get();
-                                        cfg.setTtsMode(mode);
-                                        VicConfig.save();
-                                        ctx.getSource().sendFeedback(() -> Text.literal("Vic TTS voice mode set to: " + cfg.getEffectiveTtsMode()).formatted(Formatting.GREEN), false);
-                                        return 1;
-                                    })))
-                    .then(CommandManager.literal("say")
-                            .then(CommandManager.argument("message", StringArgumentType.greedyString())
-                                    .executes(ctx -> {
-                                        ServerPlayerEntity player = ctx.getSource().getPlayerOrThrow();
-                                        String msg = StringArgumentType.getString(ctx, "message");
-                                        VicAiService.handlePlayerMessage(player, msg);
-                                        return 1;
-                                    })))
-                    .then(CommandManager.literal("color")
-                            .then(CommandManager.argument("persona", StringArgumentType.word())
-                                    .executes(ctx -> {
-                                        String raw = StringArgumentType.getString(ctx, "persona");
-                                        return applyPersonaCommand(ctx.getSource(), raw);
-                                    })))
-                    .then(CommandManager.literal("personality")
-                            .then(CommandManager.argument("persona", StringArgumentType.word())
-                                    .executes(ctx -> {
-                                        String raw = StringArgumentType.getString(ctx, "persona");
-                                        return applyPersonaCommand(ctx.getSource(), raw);
-                                    })))
-                    .then(CommandManager.literal("ollama")
-                            .then(CommandManager.literal("list")
-                                    .executes(ctx -> {
-                                        VicConfig cfg = VicConfig.get();
-                                        ctx.getSource().sendFeedback(() -> Text.literal("Scanning local Ollama models at " + cfg.ollamaUrl + "...").formatted(Formatting.YELLOW), false);
-                                        VicAiService.fetchOllamaModels(cfg.ollamaUrl).thenAccept(models -> {
-                                            ctx.getSource().getServer().execute(() -> {
-                                                if (models.isEmpty()) {
-                                                    ctx.getSource().sendFeedback(() -> Text.literal("No Ollama models found at " + cfg.ollamaUrl + ". Make sure 'ollama serve' is running!").formatted(Formatting.RED), false);
-                                                    return;
-                                                }
-                                                MutableText msg = Text.literal("=== Installed Ollama Models (click to use) ===\n").formatted(Formatting.AQUA, Formatting.BOLD);
-                                                for (String model : models) {
-                                                    boolean isCurrent = "OLLAMA".equals(cfg.getEffectiveProvider()) && model.equalsIgnoreCase(cfg.ollamaModel);
-                                                    MutableText entry = Text.literal((isCurrent ? " * " : " - ") + model + " ")
-                                                            .formatted(isCurrent ? Formatting.GREEN : Formatting.WHITE)
-                                                            .append(Text.literal("[Use Model]")
-                                                                    .formatted(Formatting.GOLD, Formatting.UNDERLINE)
-                                                                    .styled(s -> s
-                                                                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/vic ollama model " + model))
-                                                                            .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal("Switch Vic to Ollama model: " + model)))));
-                                                    msg.append(entry).append(Text.literal("\n"));
-                                                }
-                                                ctx.getSource().sendFeedback(() -> msg, false);
-                                            });
-                                        });
-                                        return 1;
-                                    }))
-                            .then(CommandManager.literal("url")
-                                    .then(CommandManager.argument("url", StringArgumentType.greedyString())
-                                            .executes(ctx -> {
-                                                String url = StringArgumentType.getString(ctx, "url").trim();
-                                                VicConfig cfg = VicConfig.get();
-                                                cfg.ollamaUrl = VicAiService.normalizeOllamaBaseUrl(url);
-                                                cfg.setProvider("OLLAMA");
-                                                VicConfig.save();
-                                                ctx.getSource().sendFeedback(() -> Text.literal("Ollama URL set to " + cfg.ollamaUrl + " (Ollama mode enabled)").formatted(Formatting.GREEN), false);
-                                                return 1;
-                                            })))
-                            .then(CommandManager.literal("model")
-                                    .then(CommandManager.argument("modelName", StringArgumentType.greedyString())
-                                            .executes(ctx -> {
-                                                String model = StringArgumentType.getString(ctx, "modelName").trim();
-                                                VicConfig cfg = VicConfig.get();
-                                                cfg.ollamaModel = model;
-                                                cfg.setProvider("OLLAMA");
-                                                VicConfig.save();
-                                                ctx.getSource().sendFeedback(() -> Text.literal("Vic is now using Ollama model: " + model + " (" + cfg.ollamaUrl + ")").formatted(Formatting.GREEN), false);
-                                                return 1;
-                                            })))
-                            .then(CommandManager.argument("modelName", StringArgumentType.greedyString())
-                                    .executes(ctx -> {
-                                        String model = StringArgumentType.getString(ctx, "modelName").trim();
-                                        VicConfig cfg = VicConfig.get();
-                                        cfg.ollamaModel = model;
-                                        cfg.setProvider("OLLAMA");
-                                        VicConfig.save();
-                                        ctx.getSource().sendFeedback(() -> Text.literal("Vic is now using Ollama model: " + model + " (" + cfg.ollamaUrl + ")").formatted(Formatting.GREEN), false);
-                                        return 1;
-                                    })))
-                    .then(CommandManager.literal("provider")
-                            .then(CommandManager.argument("mode", StringArgumentType.word())
-                                    .executes(ctx -> {
-                                        String mode = StringArgumentType.getString(ctx, "mode");
-                                        VicConfig cfg = VicConfig.get();
-                                        cfg.setProvider(mode);
-                                        VicConfig.save();
-                                        ctx.getSource().sendFeedback(() -> Text.literal("Vic AI provider switched to: " + cfg.getEffectiveProvider()).formatted(Formatting.GREEN), false);
-                                        return 1;
-                                    })))
-                    .then(CommandManager.literal("config")
-                            .then(CommandManager.literal("countdownDays")
-                                    .then(CommandManager.argument("days", IntegerArgumentType.integer(1, 30))
-                                            .executes(ctx -> {
-                                                int days = IntegerArgumentType.getInteger(ctx, "days");
-                                                VicConfig cfg = VicConfig.get();
-                                                cfg.countdownDays = days;
-                                                VicConfig.save();
-                                                VicHudStatePayload.broadcast(ctx.getSource().getServer(), VicWorldState.getServerState(ctx.getSource().getServer()));
-                                                ctx.getSource().sendFeedback(() -> Text.literal("Vic trial countdown length set to " + days + " days.").formatted(Formatting.GREEN), false);
-                                                return 1;
-                                            })))
-                            .then(CommandManager.literal("worldDecay")
-                                    .then(CommandManager.argument("enabled", BoolArgumentType.bool())
-                                            .executes(ctx -> {
-                                                boolean enabled = BoolArgumentType.getBool(ctx, "enabled");
-                                                VicConfig cfg = VicConfig.get();
-                                                cfg.enableWorldDecay = enabled;
-                                                VicConfig.save();
-                                                ctx.getSource().sendFeedback(() -> Text.literal("Vic World Decay set to " + enabled).formatted(Formatting.GREEN), false);
-                                                return 1;
-                                            })))
-                            .then(CommandManager.literal("trueDarkness")
-                                    .then(CommandManager.argument("enabled", BoolArgumentType.bool())
-                                            .executes(ctx -> {
-                                                boolean enabled = BoolArgumentType.getBool(ctx, "enabled");
-                                                VicConfig cfg = VicConfig.get();
-                                                cfg.enableTrueDarknessDuringNight = enabled;
-                                                VicConfig.save();
-                                                ctx.getSource().sendFeedback(() -> Text.literal("Vic Nighttime True Darkness set to " + enabled).formatted(Formatting.GREEN), false);
-                                                return 1;
-                                            })))
-                            .then(CommandManager.literal("autoSpawnBox")
-                                    .then(CommandManager.argument("enabled", BoolArgumentType.bool())
-                                            .executes(ctx -> {
-                                                boolean enabled = BoolArgumentType.getBool(ctx, "enabled");
-                                                VicConfig cfg = VicConfig.get();
-                                                cfg.autoSpawnDeliveryBoxOnFirstJoin = enabled;
-                                                VicConfig.save();
-                                                ctx.getSource().sendFeedback(() -> Text.literal("Vic Auto-Spawn Delivery Box set to " + enabled).formatted(Formatting.GREEN), false);
-                                                return 1;
-                                            })))
-                            .then(CommandManager.literal("hud")
-                                    .then(CommandManager.argument("enabled", BoolArgumentType.bool())
-                                            .executes(ctx -> {
-                                                boolean enabled = BoolArgumentType.getBool(ctx, "enabled");
-                                                VicConfig cfg = VicConfig.get();
-                                                cfg.enableHudOverlay = enabled;
-                                                VicConfig.save();
-                                                ctx.getSource().sendFeedback(() -> Text.literal("Vic HUD Overlay set to " + enabled).formatted(Formatting.GREEN), false);
-                                                return 1;
-                                            })))
-                            .then(CommandManager.literal("controller")
-                                    .then(CommandManager.argument("enabled", BoolArgumentType.bool())
-                                            .executes(ctx -> {
-                                                boolean enabled = BoolArgumentType.getBool(ctx, "enabled");
-                                                VicConfig cfg = VicConfig.get();
-                                                cfg.enableController = enabled;
-                                                VicConfig.save();
-                                                ctx.getSource().sendFeedback(() -> Text.literal("Vic PS5/Xbox Controller support set to " + enabled).formatted(Formatting.GREEN), false);
-                                                return 1;
-                                            }))))
-                    .then(CommandManager.literal("setday")
-                            .requires(src -> src.hasPermissionLevel(2))
-                            .then(CommandManager.argument("day", IntegerArgumentType.integer(1, 30))
-                                    .executes(ctx -> {
-                                        int day = IntegerArgumentType.getInteger(ctx, "day");
-                                        MinecraftServer server = ctx.getSource().getServer();
-                                        ServerWorld overworld = server.getWorld(World.OVERWORLD);
-                                        VicWorldState state = VicWorldState.getServerState(server);
-                                        state.resetCountdownToDay(day, overworld.getTimeOfDay());
-                                        boolean restoredVic = false;
-                                        if (day > VicConfig.get().countdownDays) {
-                                            awakenVicDemon(server, overworld, state);
-                                        } else if (state.findActiveVicEntity(server, null) instanceof VicDemonEntity demon
-                                                && demon.getWorld() instanceof ServerWorld demonWorld) {
-                                            VicEntity vic = ModEntities.VIC.create(demonWorld);
-                                            if (vic != null) {
-                                                vic.refreshPositionAndAngles(
-                                                        demon.getX(), demon.getY(), demon.getZ(), demon.getYaw(), demon.getPitch()
-                                                );
-                                                vic.setCorruptionStage(state.computeStage(VicConfig.get().countdownDays));
-                                                PlayerEntity nearestPlayer = demonWorld.getClosestPlayer(demon, 64.0);
-                                                if (nearestPlayer != null) {
-                                                    vic.setOwnerUuid(nearestPlayer.getUuid());
-                                                }
-                                                state.transferSingletonVic(demon, vic);
-                                                demonWorld.spawnEntity(vic);
-                                                demon.discard();
-                                                restoredVic = true;
-                                            }
-                                        }
-                                        VicHudStatePayload.broadcast(server, state);
-                                        String feedback = "Vic countdown reset to Day " + day
-                                                + (restoredVic ? "; Vic has returned." : ".");
-                                        ctx.getSource().sendFeedback(() -> Text.literal(feedback).formatted(Formatting.GREEN), true);
-                                        return 1;
-                                    })))
-                    .then(CommandManager.literal("setkarma")
-                            .requires(src -> src.hasPermissionLevel(2))
-                            .then(CommandManager.argument("karma", IntegerArgumentType.integer(-100, 100))
-                                    .executes(ctx -> {
-                                        int karma = IntegerArgumentType.getInteger(ctx, "karma");
-                                        MinecraftServer server = ctx.getSource().getServer();
-                                        VicWorldState state = VicWorldState.getServerState(server);
-                                        state.setKarma(karma);
-                                        VicHudStatePayload.broadcast(server, state);
-                                        ctx.getSource().sendFeedback(() -> Text.literal("Vic Karma set to " + karma).formatted(Formatting.GREEN), true);
-                                        return 1;
-                                    })))
-                    .then(CommandManager.literal("apikey")
-                            .then(CommandManager.argument("key", StringArgumentType.greedyString())
-                                    .executes(ctx -> {
-                                        String key = StringArgumentType.getString(ctx, "key").trim();
-                                        VicConfig cfg = VicConfig.get();
-                                        cfg.apiKey = key;
-                                        cfg.setProvider(key.isEmpty() ? "SCRIPTED" : "OPENAI");
-                                        VicConfig.save();
-                                        ctx.getSource().sendFeedback(() -> Text.literal("Vic AI API key updated and OpenAI/Groq mode enabled! Endpoint: " + cfg.apiEndpoint).formatted(Formatting.GREEN), false);
-                                        return 1;
-                                    })))
-            );
-        });
-    }
+                    .then(Commands.literal("tts")
+                            .then(Commands.literal("test")
+                                     .executes(ctx -> {
+                                         ServerLevel world = ctx.getSource().getLevel();
+                                         VicWorldState state = VicWorldState.getServerState(world.getServer());
+                                         int stage = state.computeStage(VicConfig.get().countdownDays);
+                                         ServerPlayer player = ctx.getSource().getPlayer();
+                                         if (player != null) {
+                                             VicSpeechPayload.sendTo(player, "Hello friend! My voice synthesizer is online and calibrated!", stage);
+                                         }
+                                         ctx.getSource().sendSuccess(() -> Component.literal("Playing Vic TTS test (Stage " + stage + ", Mode=" + VicConfig.get().getEffectiveTtsMode() + ")").withStyle(ChatFormatting.AQUA), false);
+                                         return 1;
+                                     })
+                                     .then(Commands.argument("stage", IntegerArgumentType.integer(0, 3))
+                                             .executes(ctx -> {
+                                                 int stage = IntegerArgumentType.getInteger(ctx, "stage");
+                                                 String sample = switch (stage) {
+                                                     case 0 -> "Hiya bestie! It is such a wonderful day to be alive and spherical!";
+                                                     case 1 -> "I am always watching over you, even when you sleep.";
+                                                     case 2 -> "Where did all the animals go? Time is almost up.";
+                                                     default -> "The shell is too tight. Do not hide on the surface.";
+                                                 };
+                                                 ServerPlayer player = ctx.getSource().getPlayer();
+                                                 if (player != null) {
+                                                     VicSpeechPayload.sendTo(player, sample, stage);
+                                                 }
+                                                 ctx.getSource().sendSuccess(() -> Component.literal("Playing Vic TTS test for Stage " + stage).withStyle(ChatFormatting.AQUA), false);
+                                                 return 1;
+                                             })))
+                             .then(Commands.argument("mode", StringArgumentType.word())
+                                     .executes(ctx -> {
+                                         String mode = StringArgumentType.getString(ctx, "mode");
+                                         VicConfig cfg = VicConfig.get();
+                                         cfg.setTtsMode(mode);
+                                         VicConfig.save();
+                                         ctx.getSource().sendSuccess(() -> Component.literal("Vic TTS voice mode set to: " + cfg.getEffectiveTtsMode()).withStyle(ChatFormatting.GREEN), false);
+                                         return 1;
+                                     })))
+                     .then(Commands.literal("say")
+                             .then(Commands.argument("message", StringArgumentType.greedyString())
+                                     .executes(ctx -> {
+                                         ServerPlayer player = ctx.getSource().getPlayerOrException();
+                                         String msg = StringArgumentType.getString(ctx, "message");
+                                         VicAiService.handlePlayerMessage(player, msg);
+                                         return 1;
+                                     })))
+                     .then(Commands.literal("color")
+                             .then(Commands.argument("persona", StringArgumentType.word())
+                                     .executes(ctx -> {
+                                         String raw = StringArgumentType.getString(ctx, "persona");
+                                         return applyPersonaCommand(ctx.getSource(), raw);
+                                     })))
+                     .then(Commands.literal("personality")
+                             .then(Commands.argument("persona", StringArgumentType.word())
+                                     .executes(ctx -> {
+                                         String raw = StringArgumentType.getString(ctx, "persona");
+                                         return applyPersonaCommand(ctx.getSource(), raw);
+                                     })))
+                     .then(Commands.literal("ollama")
+                             .then(Commands.literal("list")
+                                     .executes(ctx -> {
+                                         VicConfig cfg = VicConfig.get();
+                                         ctx.getSource().sendSuccess(() -> Component.literal("Scanning local Ollama models at " + cfg.ollamaUrl + "...").withStyle(ChatFormatting.YELLOW), false);
+                                         VicAiService.fetchOllamaModels(cfg.ollamaUrl).thenAccept(models -> {
+                                             ctx.getSource().getServer().execute(() -> {
+                                                 if (models.isEmpty()) {
+                                                     ctx.getSource().sendSuccess(() -> Component.literal("No Ollama models found at " + cfg.ollamaUrl + ". Make sure 'ollama serve' is running!").withStyle(ChatFormatting.RED), false);
+                                                     return;
+                                                 }
+                                                 MutableComponent msg = Component.literal("=== Installed Ollama Models (click to use) ===\n").withStyle(ChatFormatting.AQUA, ChatFormatting.BOLD);
+                                                 for (String model : models) {
+                                                     boolean isCurrent = "OLLAMA".equals(cfg.getEffectiveProvider()) && model.equalsIgnoreCase(cfg.ollamaModel);
+                                                     MutableComponent entry = Component.literal((isCurrent ? " * " : " - ") + model + " ")
+                                                             .withStyle(isCurrent ? ChatFormatting.GREEN : ChatFormatting.WHITE)
+                                                             .append(Component.literal("[Use Model]")
+                                                                     .withStyle(ChatFormatting.GOLD, ChatFormatting.UNDERLINE)
+                                                                     .withStyle(s -> s
+                                                                             .withClickEvent(new ClickEvent.RunCommand("/vic ollama model " + model))
+                                                                             .withHoverEvent(new HoverEvent.ShowText(Component.literal("Switch Vic to Ollama model: " + model)))));
+                                                     msg.append(entry).append(Component.literal("\n"));
+                                                 }
+                                                 ctx.getSource().sendSuccess(() -> msg, false);
+                                             });
+                                         });
+                                         return 1;
+                                     }))
+                             .then(Commands.literal("url")
+                                     .then(Commands.argument("url", StringArgumentType.greedyString())
+                                             .executes(ctx -> {
+                                                 String url = StringArgumentType.getString(ctx, "url").trim();
+                                                 VicConfig cfg = VicConfig.get();
+                                                 cfg.ollamaUrl = VicAiService.normalizeOllamaBaseUrl(url);
+                                                 cfg.setProvider("OLLAMA");
+                                                 VicConfig.save();
+                                                 ctx.getSource().sendSuccess(() -> Component.literal("Ollama URL set to " + cfg.ollamaUrl + " (Ollama mode enabled)").withStyle(ChatFormatting.GREEN), false);
+                                                 return 1;
+                                             })))
+                             .then(Commands.literal("model")
+                                     .then(Commands.argument("modelName", StringArgumentType.greedyString())
+                                             .executes(ctx -> {
+                                                 String model = StringArgumentType.getString(ctx, "modelName").trim();
+                                                 VicConfig cfg = VicConfig.get();
+                                                 cfg.ollamaModel = model;
+                                                 cfg.setProvider("OLLAMA");
+                                                 VicConfig.save();
+                                                 ctx.getSource().sendSuccess(() -> Component.literal("Vic is now using Ollama model: " + model + " (" + cfg.ollamaUrl + ")").withStyle(ChatFormatting.GREEN), false);
+                                                 return 1;
+                                             })))
+                             .then(Commands.argument("modelName", StringArgumentType.greedyString())
+                                     .executes(ctx -> {
+                                         String model = StringArgumentType.getString(ctx, "modelName").trim();
+                                         VicConfig cfg = VicConfig.get();
+                                         cfg.ollamaModel = model;
+                                         cfg.setProvider("OLLAMA");
+                                         VicConfig.save();
+                                         ctx.getSource().sendSuccess(() -> Component.literal("Vic is now using Ollama model: " + model + " (" + cfg.ollamaUrl + ")").withStyle(ChatFormatting.GREEN), false);
+                                         return 1;
+                                     })))
+                     .then(Commands.literal("provider")
+                             .then(Commands.argument("mode", StringArgumentType.word())
+                                     .executes(ctx -> {
+                                         String mode = StringArgumentType.getString(ctx, "mode");
+                                         VicConfig cfg = VicConfig.get();
+                                         cfg.setProvider(mode);
+                                         VicConfig.save();
+                                         ctx.getSource().sendSuccess(() -> Component.literal("Vic AI provider switched to: " + cfg.getEffectiveProvider()).withStyle(ChatFormatting.GREEN), false);
+                                         return 1;
+                                     })))
+                     .then(Commands.literal("config")
+                             .then(Commands.literal("countdownDays")
+                                     .then(Commands.argument("days", IntegerArgumentType.integer(1, 30))
+                                             .executes(ctx -> {
+                                                 int days = IntegerArgumentType.getInteger(ctx, "days");
+                                                 VicConfig cfg = VicConfig.get();
+                                                 cfg.countdownDays = days;
+                                                 VicConfig.save();
+                                                 VicHudStatePayload.broadcast(ctx.getSource().getServer(), VicWorldState.getServerState(ctx.getSource().getServer()));
+                                                 ctx.getSource().sendSuccess(() -> Component.literal("Vic trial countdown length set to " + days + " days.").withStyle(ChatFormatting.GREEN), false);
+                                                 return 1;
+                                             })))
+                             .then(Commands.literal("worldDecay")
+                                     .then(Commands.argument("enabled", BoolArgumentType.bool())
+                                             .executes(ctx -> {
+                                                 boolean enabled = BoolArgumentType.getBool(ctx, "enabled");
+                                                 VicConfig cfg = VicConfig.get();
+                                                 cfg.enableWorldDecay = enabled;
+                                                 VicConfig.save();
+                                                 ctx.getSource().sendSuccess(() -> Component.literal("Vic World Decay set to " + enabled).withStyle(ChatFormatting.GREEN), false);
+                                                 return 1;
+                                             })))
+                             .then(Commands.literal("trueDarkness")
+                                     .then(Commands.argument("enabled", BoolArgumentType.bool())
+                                             .executes(ctx -> {
+                                                 boolean enabled = BoolArgumentType.getBool(ctx, "enabled");
+                                                 VicConfig cfg = VicConfig.get();
+                                                 cfg.enableTrueDarknessDuringNight = enabled;
+                                                 VicConfig.save();
+                                                 ctx.getSource().sendSuccess(() -> Component.literal("Vic Nighttime True Darkness set to " + enabled).withStyle(ChatFormatting.GREEN), false);
+                                                 return 1;
+                                             })))
+                             .then(Commands.literal("autoSpawnBox")
+                                     .then(Commands.argument("enabled", BoolArgumentType.bool())
+                                             .executes(ctx -> {
+                                                 boolean enabled = BoolArgumentType.getBool(ctx, "enabled");
+                                                 VicConfig cfg = VicConfig.get();
+                                                 cfg.autoSpawnDeliveryBoxOnFirstJoin = enabled;
+                                                 VicConfig.save();
+                                                 ctx.getSource().sendSuccess(() -> Component.literal("Vic Auto-Spawn Delivery Box set to " + enabled).withStyle(ChatFormatting.GREEN), false);
+                                                 return 1;
+                                             })))
+                             .then(Commands.literal("hud")
+                                     .then(Commands.argument("enabled", BoolArgumentType.bool())
+                                             .executes(ctx -> {
+                                                 boolean enabled = BoolArgumentType.getBool(ctx, "enabled");
+                                                 VicConfig cfg = VicConfig.get();
+                                                 cfg.enableHudOverlay = enabled;
+                                                 VicConfig.save();
+                                                 ctx.getSource().sendSuccess(() -> Component.literal("Vic HUD Overlay set to " + enabled).withStyle(ChatFormatting.GREEN), false);
+                                                 return 1;
+                                             })))
+                             .then(Commands.literal("controller")
+                                     .then(Commands.argument("enabled", BoolArgumentType.bool())
+                                             .executes(ctx -> {
+                                                 boolean enabled = BoolArgumentType.getBool(ctx, "enabled");
+                                                 VicConfig cfg = VicConfig.get();
+                                                 cfg.enableController = enabled;
+                                                 VicConfig.save();
+                                                 ctx.getSource().sendSuccess(() -> Component.literal("Vic PS5/Xbox Controller support set to " + enabled).withStyle(ChatFormatting.GREEN), false);
+                                                 return 1;
+                                             }))))
+                     .then(Commands.literal("setday")
+                             .requires(src -> src.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER))
+                             .then(Commands.argument("day", IntegerArgumentType.integer(1, 30))
+                                     .executes(ctx -> {
+                                         int day = IntegerArgumentType.getInteger(ctx, "day");
+                                         MinecraftServer server = ctx.getSource().getServer();
+                                         ServerLevel overworld = server.getLevel(Level.OVERWORLD);
+                                         VicWorldState state = VicWorldState.getServerState(server);
+                                         state.resetCountdownToDay(day, overworld.getOverworldClockTime());
+                                         boolean restoredVic = false;
+                                         if (day > VicConfig.get().countdownDays) {
+                                             awakenVicDemon(server, overworld, state);
+                                         } else if (state.findActiveVicEntity(server, null) instanceof VicDemonEntity demon
+                                                 && demon.level() instanceof ServerLevel demonWorld) {
+                                             VicEntity vic = ModEntities.VIC.create(demonWorld, EntitySpawnReason.EVENT);
+                                             if (vic != null) {
+                                                 vic.snapTo(
+                                                         demon.getX(), demon.getY(), demon.getZ(), demon.getYRot(), demon.getXRot()
+                                                 );
+                                                 vic.setCorruptionStage(state.computeStage(VicConfig.get().countdownDays));
+                                                 Player nearestPlayer = demonWorld.getNearestPlayer(demon, 64.0);
+                                                 if (nearestPlayer != null) {
+                                                     vic.setOwnerUuid(nearestPlayer.getUUID());
+                                                 }
+                                                 state.transferSingletonVic(demon, vic);
+                                                 demonWorld.addFreshEntity(vic);
+                                                 demon.discard();
+                                                 restoredVic = true;
+                                             }
+                                         }
+                                         VicHudStatePayload.broadcast(server, state);
+                                         String feedback = "Vic countdown reset to Day " + day
+                                                 + (restoredVic ? "; Vic has returned." : ".");
+                                         ctx.getSource().sendSuccess(() -> Component.literal(feedback).withStyle(ChatFormatting.GREEN), true);
+                                         return 1;
+                                     })))
+                     .then(Commands.literal("setkarma")
+                             .requires(src -> src.permissions().hasPermission(net.minecraft.server.permissions.Permissions.COMMANDS_GAMEMASTER))
+                             .then(Commands.argument("karma", IntegerArgumentType.integer(-100, 100))
+                                     .executes(ctx -> {
+                                         int karma = IntegerArgumentType.getInteger(ctx, "karma");
+                                         MinecraftServer server = ctx.getSource().getServer();
+                                         VicWorldState state = VicWorldState.getServerState(server);
+                                         state.setKarma(karma);
+                                         VicHudStatePayload.broadcast(server, state);
+                                         ctx.getSource().sendSuccess(() -> Component.literal("Vic Karma set to " + karma).withStyle(ChatFormatting.GREEN), true);
+                                         return 1;
+                                     })))
+                     .then(Commands.literal("apikey")
+                             .then(Commands.argument("key", StringArgumentType.greedyString())
+                                     .executes(ctx -> {
+                                         String key = StringArgumentType.getString(ctx, "key").trim();
+                                         VicConfig cfg = VicConfig.get();
+                                         cfg.apiKey = key;
+                                         cfg.setProvider(key.isEmpty() ? "SCRIPTED" : "OPENAI");
+                                         VicConfig.save();
+                                         ctx.getSource().sendSuccess(() -> Component.literal("Vic AI API key updated and OpenAI/Groq mode enabled! Endpoint: " + cfg.apiEndpoint).withStyle(ChatFormatting.GREEN), false);
+                                         return 1;
+                                     })))
+             );
+         });
+     }
 
-    private int applyPersonaCommand(net.minecraft.server.command.ServerCommandSource source, String rawPersona) {
-        VicPersona persona = VicPersona.fromString(rawPersona);
-        VicConfig cfg = VicConfig.get();
-        cfg.setPersona(persona.getId());
-        VicConfig.save();
+     private int applyPersonaCommand(CommandSourceStack source, String rawPersona) {
+         VicPersona persona = VicPersona.fromString(rawPersona);
+         VicConfig cfg = VicConfig.get();
+         cfg.setPersona(persona.getId());
+         VicConfig.save();
 
-        MinecraftServer server = source.getServer();
-        VicWorldState state = VicWorldState.getServerState(server);
-        Entity active = state.findActiveVicEntity(server, null);
-        if (active instanceof VicEntity vic) {
-            vic.setPersona(persona);
-            ServerPlayerEntity player = source.getPlayer();
-            if (player != null) {
-                VicAiService.deliverDirectLine(player, vic, vic.getCorruptionStage(), persona.getDyeReactionLine());
-            }
-        }
+         MinecraftServer server = source.getServer();
+         VicWorldState state = VicWorldState.getServerState(server);
+         Entity active = state.findActiveVicEntity(server, null);
+         if (active instanceof VicEntity vic) {
+             vic.setPersona(persona);
+             ServerPlayer player = source.getPlayer();
+             if (player != null) {
+                 VicAiService.deliverDirectLine(player, vic, vic.getCorruptionStage(), persona.getDyeReactionLine());
+             }
+         }
 
-        source.sendFeedback(() -> Text.literal("Vic color & personality set to: ")
-                .formatted(Formatting.WHITE)
-                .append(Text.literal(persona.getDisplayName()).formatted(persona.getChatFormatting(), Formatting.BOLD)), false);
-        return 1;
-    }
-
+         source.sendSuccess(() -> Component.literal("Vic color & personality set to: ")
+                 .withStyle(ChatFormatting.WHITE)
+                 .append(Component.literal(persona.getDisplayName()).withStyle(persona.getChatFormatting(), ChatFormatting.BOLD)), false);
+         return 1;
+     }
 }

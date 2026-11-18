@@ -4,25 +4,25 @@ This guide covers setting up and running the Vic Fabric mod from source. Player-
 
 ## Requirements
 
-- [JDK 21](https://adoptium.net/temurin/releases/?version=21)
+- [JDK 25](https://adoptium.net/temurin/releases/?version=25)
 - [Git](https://git-scm.com/downloads)
 - Internet access for the first Gradle dependency download
 - An IDE is optional: [IntelliJ IDEA](https://www.jetbrains.com/idea/download/) or [VS Code](https://code.visualstudio.com/) with the [Extension Pack for Java](https://marketplace.visualstudio.com/items?itemName=vscjava.vscode-java-pack) can import the project as a Gradle workspace.
 
-The project uses [Minecraft 1.21.1](https://www.minecraft.net/), [Fabric Loader](https://fabricmc.net/use/installer/), [Fabric API](https://modrinth.com/mod/fabric-api), [Yarn mappings](https://github.com/FabricMC/yarn), and the [Fabric Loom Gradle plugin](https://github.com/FabricMC/fabric-loom). The Gradle wrapper is included in the repository and downloads [Gradle 8.11](https://docs.gradle.org/8.11/userguide/gradle_wrapper.html) automatically. You do not need to install these game/build components separately or have a separate Minecraft installation to run the development client.
+The project uses [Minecraft 26.x](https://www.minecraft.net/), [Fabric Loader](https://fabricmc.net/use/installer/), [Fabric API](https://modrinth.com/mod/fabric-api), official Mojang mappings, and the [Fabric Loom Gradle plugin](https://github.com/FabricMC/fabric-loom). The Gradle wrapper is included in the repository and downloads [Gradle 9.8.2](https://docs.gradle.org/9.8.2/userguide/gradle_wrapper.html) automatically. You do not need to install these game/build components separately or have a separate Minecraft installation to run the development client.
 
 Sherpa-ONNX is used for local speech recognition and synthesis. Its [Java API](https://k2-fsa.github.io/sherpa/onnx/java-api/non-android-java.html), [native runtime](https://github.com/k2-fsa/sherpa-onnx), and the bundled [Zipformer-small English STT model](https://huggingface.co/csukuangfj/sherpa-onnx-zipformer-small-en-2023-06-26) and [LibriTTS-R Piper TTS model](https://huggingface.co/rhasspy/piper-voices/tree/main/en/en_US/libritts_r/medium) are documented here for reference. The model assets and supported native runtimes are already included in the mod build.
 
 ## Verify Java and Gradle
 
-From the repository root, check that Java 21 is active and that the wrapper can run:
+From the repository root, check that Java 25 is active and that the wrapper can run:
 
 ```sh
 java -version
 ./gradlew --version
 ```
 
-The Gradle wrapper downloads the configured Gradle 8.11 distribution on its first run. In your IDE, open the repository root and allow it to import/sync the Gradle project. Make sure the IDE's Gradle JVM is set to the JDK 21 linked above.
+The Gradle wrapper downloads the configured Gradle 9.8.2 distribution on its first run. In your IDE, open the repository root and allow it to import/sync the Gradle project. Make sure the IDE's Gradle JVM is set to the JDK 25 linked above.
 
 On Windows, use `gradlew.bat` instead of `./gradlew`.
 

@@ -5,13 +5,13 @@ import com.vicmod.config.VicConfig;
 import com.vicmod.config.VicPersona;
 import com.vicmod.voice.VicTtsService;
 import com.vicmod.voice.VicVoiceInputService;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -29,27 +29,27 @@ public class VicConfigScreen extends Screen {
     private boolean enableTrueDarkness;
     private int requestTimeoutSeconds;
 
-    private TextFieldWidget ollamaUrlField;
-    private TextFieldWidget ollamaModelField;
-    private ButtonWidget scanOllamaButton;
+    private EditBox ollamaUrlField;
+    private EditBox ollamaModelField;
+    private Button scanOllamaButton;
 
-    private TextFieldWidget apiEndpointField;
-    private TextFieldWidget apiModelField;
-    private TextFieldWidget apiKeyField;
-    private TextFieldWidget ttsVoiceField;
-    private TextFieldWidget piperModelPathField;
+    private EditBox apiEndpointField;
+    private EditBox apiModelField;
+    private EditBox apiKeyField;
+    private EditBox ttsVoiceField;
+    private EditBox piperModelPathField;
 
-    private ButtonWidget providerButton;
-    private ButtonWidget ttsModeButton;
-    private ButtonWidget testTtsButton;
-    private ButtonWidget sttModeButton;
-    private ButtonWidget testMicButton;
+    private Button providerButton;
+    private Button ttsModeButton;
+    private Button testTtsButton;
+    private Button sttModeButton;
+    private Button testMicButton;
 
-    private ButtonWidget daysButton;
-    private ButtonWidget personaButton;
-    private ButtonWidget autoSpawnButton;
-    private ButtonWidget worldDecayButton;
-    private ButtonWidget trueDarknessButton;
+    private Button daysButton;
+    private Button personaButton;
+    private Button autoSpawnButton;
+    private Button worldDecayButton;
+    private Button trueDarknessButton;
 
     private final List<String> detectedOllamaModels = new ArrayList<>();
     private int detectedModelIndex = -1;
@@ -58,7 +58,7 @@ public class VicConfigScreen extends Screen {
     private int statusColor = 0xAAAAAA;
 
     public VicConfigScreen(Screen parent) {
-        super(Text.literal("Vic Mod Configuration"));
+        super(Component.literal("Vic Mod Configuration"));
         this.parent = parent;
 
         VicConfig cfg = VicConfig.get();
@@ -82,7 +82,7 @@ public class VicConfigScreen extends Screen {
         int y = 26;
 
         // 1. AI Provider Cycle Button
-        this.providerButton = ButtonWidget.builder(getProviderButtonText(), btn -> {
+        this.providerButton = Button.builder(getProviderButtonText(), btn -> {
             this.aiProvider = switch (this.aiProvider) {
                 case "SCRIPTED" -> "OLLAMA";
                 case "OLLAMA" -> "OPENAI";
@@ -93,55 +93,55 @@ public class VicConfigScreen extends Screen {
             if ("OLLAMA".equals(this.aiProvider) && this.detectedOllamaModels.isEmpty()) {
                 scanAndCycleOllamaModels(false);
             }
-        }).dimensions(leftColX, y, 310, 20).build();
-        this.addDrawableChild(this.providerButton);
+        }).bounds(leftColX, y, 310, 20).build();
+        this.addRenderableWidget(this.providerButton);
 
         y += 24;
 
         // 2. Ollama Fields
-        this.ollamaUrlField = new TextFieldWidget(this.textRenderer, leftColX, y + 10, 150, 20, Text.literal("Ollama URL"));
+        this.ollamaUrlField = new EditBox(this.font, leftColX, y + 10, 150, 20, Component.literal("Ollama URL"));
         this.ollamaUrlField.setMaxLength(256);
-        this.ollamaUrlField.setText(cfg.ollamaUrl != null ? cfg.ollamaUrl : "http://localhost:11434");
-        this.addDrawableChild(this.ollamaUrlField);
+        this.ollamaUrlField.setValue(cfg.ollamaUrl != null ? cfg.ollamaUrl : "http://localhost:11434");
+        this.addRenderableWidget(this.ollamaUrlField);
 
-        this.ollamaModelField = new TextFieldWidget(this.textRenderer, rightColX, y + 10, 95, 20, Text.literal("Ollama Model"));
+        this.ollamaModelField = new EditBox(this.font, rightColX, y + 10, 95, 20, Component.literal("Ollama Model"));
         this.ollamaModelField.setMaxLength(128);
-        this.ollamaModelField.setText(cfg.ollamaModel != null ? cfg.ollamaModel : "timheinrich2011/verity-3b:latest");
-        this.addDrawableChild(this.ollamaModelField);
+        this.ollamaModelField.setValue(cfg.ollamaModel != null ? cfg.ollamaModel : "timheinrich2011/verity-3b:latest");
+        this.addRenderableWidget(this.ollamaModelField);
 
-        this.scanOllamaButton = ButtonWidget.builder(Text.literal("Models").formatted(Formatting.AQUA), btn -> {
+        this.scanOllamaButton = Button.builder(Component.literal("Models").withStyle(ChatFormatting.AQUA), btn -> {
             scanAndCycleOllamaModels(true);
-        }).dimensions(rightColX + 100, y + 10, 50, 20).build();
-        this.addDrawableChild(this.scanOllamaButton);
+        }).bounds(rightColX + 100, y + 10, 50, 20).build();
+        this.addRenderableWidget(this.scanOllamaButton);
 
         // 3. OpenAI / Groq Fields
-        this.apiEndpointField = new TextFieldWidget(this.textRenderer, leftColX, y + 10, 150, 20, Text.literal("API Endpoint"));
+        this.apiEndpointField = new EditBox(this.font, leftColX, y + 10, 150, 20, Component.literal("API Endpoint"));
         this.apiEndpointField.setMaxLength(256);
-        this.apiEndpointField.setText(cfg.apiEndpoint != null ? cfg.apiEndpoint : "");
-        this.addDrawableChild(this.apiEndpointField);
+        this.apiEndpointField.setValue(cfg.apiEndpoint != null ? cfg.apiEndpoint : "");
+        this.addRenderableWidget(this.apiEndpointField);
 
-        this.apiModelField = new TextFieldWidget(this.textRenderer, rightColX, y + 10, 150, 20, Text.literal("API Model"));
+        this.apiModelField = new EditBox(this.font, rightColX, y + 10, 150, 20, Component.literal("API Model"));
         this.apiModelField.setMaxLength(128);
-        this.apiModelField.setText(cfg.apiModel != null ? cfg.apiModel : "");
-        this.addDrawableChild(this.apiModelField);
+        this.apiModelField.setValue(cfg.apiModel != null ? cfg.apiModel : "");
+        this.addRenderableWidget(this.apiModelField);
 
         y += 34;
 
         // API credentials and TTS voice
-        this.apiKeyField = new TextFieldWidget(this.textRenderer, leftColX, y + 10, 150, 20, Text.literal("API Key"));
+        this.apiKeyField = new EditBox(this.font, leftColX, y + 10, 150, 20, Component.literal("API Key"));
         this.apiKeyField.setMaxLength(256);
-        this.apiKeyField.setText(cfg.apiKey != null ? cfg.apiKey : "");
-        this.addDrawableChild(this.apiKeyField);
+        this.apiKeyField.setValue(cfg.apiKey != null ? cfg.apiKey : "");
+        this.addRenderableWidget(this.apiKeyField);
 
-        this.ttsVoiceField = new TextFieldWidget(this.textRenderer, rightColX, y + 10, 150, 20, Text.literal("OpenAI TTS Voice"));
+        this.ttsVoiceField = new EditBox(this.font, rightColX, y + 10, 150, 20, Component.literal("OpenAI TTS Voice"));
         this.ttsVoiceField.setMaxLength(64);
-        this.ttsVoiceField.setText(cfg.ttsVoice != null ? cfg.ttsVoice : "alloy");
-        this.addDrawableChild(this.ttsVoiceField);
+        this.ttsVoiceField.setValue(cfg.ttsVoice != null ? cfg.ttsVoice : "alloy");
+        this.addRenderableWidget(this.ttsVoiceField);
 
         y += 36;
 
         // 4. Text-to-Speech (TTS) & Voice Input (STT) Controls
-        this.ttsModeButton = ButtonWidget.builder(getTtsModeText(), btn -> {
+        this.ttsModeButton = Button.builder(getTtsModeText(), btn -> {
             this.ttsMode = switch (this.ttsMode) {
                 case "SHERPA" -> "PIPER";
                 case "PIPER" -> "LOCAL";
@@ -152,10 +152,10 @@ public class VicConfigScreen extends Screen {
                 default -> "SHERPA";
             };
             btn.setMessage(getTtsModeText());
-        }).dimensions(leftColX, y, 108, 20).build();
-        this.addDrawableChild(this.ttsModeButton);
+        }).bounds(leftColX, y, 108, 20).build();
+        this.addRenderableWidget(this.ttsModeButton);
 
-        this.testTtsButton = ButtonWidget.builder(Text.literal("Test").formatted(Formatting.YELLOW), btn -> {
+        this.testTtsButton = Button.builder(Component.literal("Test").withStyle(ChatFormatting.YELLOW), btn -> {
             applyTransientVoiceConfig();
             String sample = switch (this.testTtsStage) {
                 case 0 -> "Hiya bestie! I am Vic, your cheerful companion!";
@@ -167,10 +167,10 @@ public class VicConfigScreen extends Screen {
             this.statusColor = 0x55FFFF;
             VicTtsService.speak(sample, this.testTtsStage);
             this.testTtsStage = (this.testTtsStage + 1) % 4;
-        }).dimensions(leftColX + 112, y, 38, 20).build();
-        this.addDrawableChild(this.testTtsButton);
+        }).bounds(leftColX + 112, y, 38, 20).build();
+        this.addRenderableWidget(this.testTtsButton);
 
-        this.sttModeButton = ButtonWidget.builder(getSttModeText(), btn -> {
+        this.sttModeButton = Button.builder(getSttModeText(), btn -> {
             this.sttMode = switch (this.sttMode) {
                 case "SHERPA" -> "LOCAL_CLI";
                 case "LOCAL_CLI" -> "AUTO";
@@ -179,15 +179,15 @@ public class VicConfigScreen extends Screen {
                 default -> "SHERPA";
             };
             btn.setMessage(getSttModeText());
-        }).dimensions(rightColX, y, 108, 20).build();
-        this.addDrawableChild(this.sttModeButton);
+        }).bounds(rightColX, y, 108, 20).build();
+        this.addRenderableWidget(this.sttModeButton);
 
-        this.testMicButton = ButtonWidget.builder(Text.literal("Mic").formatted(Formatting.AQUA), btn -> {
+        this.testMicButton = Button.builder(Component.literal("Mic").withStyle(ChatFormatting.AQUA), btn -> {
             applyTransientVoiceConfig();
             this.statusText = "Recording mic for 3 seconds... Speak now!";
             this.statusColor = 0xFF5555;
             VicVoiceInputService.recordFixedDurationAndTranscribe(3, res -> {
-                MinecraftClient.getInstance().execute(() -> {
+                Minecraft.getInstance().execute(() -> {
                     if (res.success()) {
                         this.statusText = "Heard: \"" + res.text() + "\"";
                         this.statusColor = 0x55FF55;
@@ -197,55 +197,55 @@ public class VicConfigScreen extends Screen {
                     }
                 });
             });
-        }).dimensions(rightColX + 112, y, 38, 20).build();
-        this.addDrawableChild(this.testMicButton);
+        }).bounds(rightColX + 112, y, 38, 20).build();
+        this.addRenderableWidget(this.testMicButton);
 
         y += 24;
 
-        this.piperModelPathField = new TextFieldWidget(this.textRenderer, leftColX, y + 10, 310, 20, Text.literal("Piper voice model path"));
+        this.piperModelPathField = new EditBox(this.font, leftColX, y + 10, 310, 20, Component.literal("Piper voice model path"));
         this.piperModelPathField.setMaxLength(512);
-        this.piperModelPathField.setText(cfg.piperModelPath != null ? cfg.piperModelPath : "");
-        this.addDrawableChild(this.piperModelPathField);
+        this.piperModelPathField.setValue(cfg.piperModelPath != null ? cfg.piperModelPath : "");
+        this.addRenderableWidget(this.piperModelPathField);
 
         y += 34;
 
         // 5. Gameplay Toggles (2 columns)
-        this.daysButton = ButtonWidget.builder(getDaysButtonText(), btn -> {
+        this.daysButton = Button.builder(getDaysButtonText(), btn -> {
             this.countdownDays = (this.countdownDays % 15) + 1;
             btn.setMessage(getDaysButtonText());
-        }).dimensions(leftColX, y, 150, 20).build();
-        this.addDrawableChild(this.daysButton);
+        }).bounds(leftColX, y, 150, 20).build();
+        this.addRenderableWidget(this.daysButton);
 
-        this.personaButton = ButtonWidget.builder(getPersonaButtonText(), btn -> {
+        this.personaButton = Button.builder(getPersonaButtonText(), btn -> {
             this.vicPersona = this.vicPersona.next();
             btn.setMessage(getPersonaButtonText());
-        }).dimensions(rightColX, y, 150, 20).build();
-        this.addDrawableChild(this.personaButton);
+        }).bounds(rightColX, y, 150, 20).build();
+        this.addRenderableWidget(this.personaButton);
 
         y += 22;
 
-        this.worldDecayButton = ButtonWidget.builder(getToggleText("World Decay", this.enableWorldDecay), btn -> {
+        this.worldDecayButton = Button.builder(getToggleText("World Decay", this.enableWorldDecay), btn -> {
             this.enableWorldDecay = !this.enableWorldDecay;
             btn.setMessage(getToggleText("World Decay", this.enableWorldDecay));
-        }).dimensions(leftColX, y, 150, 20).build();
-        this.addDrawableChild(this.worldDecayButton);
+        }).bounds(leftColX, y, 150, 20).build();
+        this.addRenderableWidget(this.worldDecayButton);
 
-        this.trueDarknessButton = ButtonWidget.builder(getToggleText("Night Darkness", this.enableTrueDarkness), btn -> {
+        this.trueDarknessButton = Button.builder(getToggleText("Night Darkness", this.enableTrueDarkness), btn -> {
             this.enableTrueDarkness = !this.enableTrueDarkness;
             btn.setMessage(getToggleText("Night Darkness", this.enableTrueDarkness));
-        }).dimensions(rightColX, y, 150, 20).build();
-        this.addDrawableChild(this.trueDarknessButton);
+        }).bounds(rightColX, y, 150, 20).build();
+        this.addRenderableWidget(this.trueDarknessButton);
 
         // 6. Save & Cancel Buttons
         int bottomY = this.height - 26;
-        this.addDrawableChild(ButtonWidget.builder(Text.literal("Save & Close").formatted(Formatting.GREEN), btn -> {
+        this.addRenderableWidget(Button.builder(Component.literal("Save & Close").withStyle(ChatFormatting.GREEN), btn -> {
             saveChanges();
-            this.close();
-        }).dimensions(leftColX, bottomY, 150, 20).build());
+            this.onClose();
+        }).bounds(leftColX, bottomY, 150, 20).build());
 
-        this.addDrawableChild(ButtonWidget.builder(Text.literal("Cancel"), btn -> {
-            this.close();
-        }).dimensions(rightColX, bottomY, 150, 20).build());
+        this.addRenderableWidget(Button.builder(Component.literal("Cancel"), btn -> {
+            this.onClose();
+        }).bounds(rightColX, bottomY, 150, 20).build());
 
         updateFieldVisibility();
         if ("OLLAMA".equals(this.aiProvider)) {
@@ -270,38 +270,38 @@ public class VicConfigScreen extends Screen {
         VicConfig cfg = VicConfig.get();
         cfg.setTtsMode(this.ttsMode);
         cfg.setSttMode(this.sttMode);
-        cfg.apiKey = this.apiKeyField.getText().trim();
-        cfg.ttsVoice = this.ttsVoiceField.getText().trim();
-        cfg.piperModelPath = this.piperModelPathField.getText().trim();
+        cfg.apiKey = this.apiKeyField.getValue().trim();
+        cfg.ttsVoice = this.ttsVoiceField.getValue().trim();
+        cfg.piperModelPath = this.piperModelPathField.getValue().trim();
     }
 
     private void scanAndCycleOllamaModels(boolean cycleIfAlreadyLoaded) {
         if (cycleIfAlreadyLoaded && !this.detectedOllamaModels.isEmpty()) {
             this.detectedModelIndex = (this.detectedModelIndex + 1) % this.detectedOllamaModels.size();
             String chosen = this.detectedOllamaModels.get(this.detectedModelIndex);
-            this.ollamaModelField.setText(chosen);
+            this.ollamaModelField.setValue(chosen);
             this.statusText = "Selected Ollama model (" + (this.detectedModelIndex + 1) + "/" + this.detectedOllamaModels.size() + "): " + chosen;
             this.statusColor = 0x55FF55;
             return;
         }
 
-        String url = this.ollamaUrlField.getText();
+        String url = this.ollamaUrlField.getValue();
         this.statusText = "Scanning Ollama models at " + VicAiService.normalizeOllamaBaseUrl(url) + "...";
         this.statusColor = 0xFFFF55;
 
         VicAiService.fetchOllamaModels(url).thenAccept(models -> {
-            MinecraftClient.getInstance().execute(() -> {
+            Minecraft.getInstance().execute(() -> {
                 this.detectedOllamaModels.clear();
                 this.detectedOllamaModels.addAll(models);
                 if (models.isEmpty()) {
                     this.statusText = "No local Ollama models detected (is 'ollama serve' running?)";
                     this.statusColor = 0xFF5555;
                 } else {
-                    String current = this.ollamaModelField.getText().trim();
+                    String current = this.ollamaModelField.getValue().trim();
                     int idx = models.indexOf(current);
                     if (idx == -1 || cycleIfAlreadyLoaded) {
                         this.detectedModelIndex = (idx + 1) % models.size();
-                        this.ollamaModelField.setText(models.get(this.detectedModelIndex));
+                        this.ollamaModelField.setValue(models.get(this.detectedModelIndex));
                     } else {
                         this.detectedModelIndex = idx;
                     }
@@ -312,42 +312,42 @@ public class VicConfigScreen extends Screen {
         });
     }
 
-    private Text getProviderButtonText() {
-        Formatting color = switch (this.aiProvider) {
-            case "OLLAMA" -> Formatting.AQUA;
-            case "OPENAI" -> Formatting.GREEN;
-            default -> Formatting.YELLOW;
+    private Component getProviderButtonText() {
+        ChatFormatting color = switch (this.aiProvider) {
+            case "OLLAMA" -> ChatFormatting.AQUA;
+            case "OPENAI" -> ChatFormatting.GREEN;
+            default -> ChatFormatting.YELLOW;
         };
         String label = switch (this.aiProvider) {
             case "OLLAMA" -> "Ollama (Local LLM)";
             case "OPENAI" -> "Remote API (OpenAI / Groq)";
             default -> "Built-in Offline Scripted";
         };
-        return Text.literal("AI Mode: ").append(Text.literal(label).formatted(color, Formatting.BOLD));
+        return Component.literal("AI Mode: ").append(Component.literal(label).withStyle(color, ChatFormatting.BOLD));
     }
 
-    private Text getTtsModeText() {
-        Formatting color = "OFF".equals(this.ttsMode) ? Formatting.RED : Formatting.GREEN;
-        return Text.literal("TTS: ").append(Text.literal(this.ttsMode).formatted(color, Formatting.BOLD));
+    private Component getTtsModeText() {
+        ChatFormatting color = "OFF".equals(this.ttsMode) ? ChatFormatting.RED : ChatFormatting.GREEN;
+        return Component.literal("TTS: ").append(Component.literal(this.ttsMode).withStyle(color, ChatFormatting.BOLD));
     }
 
-    private Text getSttModeText() {
-        Formatting color = "OFF".equals(this.sttMode) ? Formatting.RED
-            : "SHERPA".equals(this.sttMode) ? Formatting.GREEN : Formatting.AQUA;
-        return Text.literal("Mic STT: ").append(Text.literal(this.sttMode).formatted(color, Formatting.BOLD));
+    private Component getSttModeText() {
+        ChatFormatting color = "OFF".equals(this.sttMode) ? ChatFormatting.RED
+            : "SHERPA".equals(this.sttMode) ? ChatFormatting.GREEN : ChatFormatting.AQUA;
+        return Component.literal("Mic STT: ").append(Component.literal(this.sttMode).withStyle(color, ChatFormatting.BOLD));
     }
 
-    private Text getDaysButtonText() {
-        return Text.literal("Trial Length: ").append(Text.literal(this.countdownDays + " Days").formatted(Formatting.YELLOW));
+    private Component getDaysButtonText() {
+        return Component.literal("Trial Length: ").append(Component.literal(this.countdownDays + " Days").withStyle(ChatFormatting.YELLOW));
     }
 
-    private Text getPersonaButtonText() {
-        return Text.literal("Persona: ").append(Text.literal(this.vicPersona.getDisplayName()).formatted(this.vicPersona.getChatFormatting(), Formatting.BOLD));
+    private Component getPersonaButtonText() {
+        return Component.literal("Persona: ").append(Component.literal(this.vicPersona.getDisplayName()).withStyle(this.vicPersona.getChatFormatting(), ChatFormatting.BOLD));
     }
 
-    private Text getToggleText(String name, boolean enabled) {
-        return Text.literal(name + ": ").append(
-                Text.literal(enabled ? "ON" : "OFF").formatted(enabled ? Formatting.GREEN : Formatting.RED, Formatting.BOLD)
+    private Component getToggleText(String name, boolean enabled) {
+        return Component.literal(name + ": ").append(
+                Component.literal(enabled ? "ON" : "OFF").withStyle(enabled ? ChatFormatting.GREEN : ChatFormatting.RED, ChatFormatting.BOLD)
         );
     }
 
@@ -357,13 +357,13 @@ public class VicConfigScreen extends Screen {
         cfg.setTtsMode(this.ttsMode);
         cfg.setSttMode(this.sttMode);
         cfg.setPersona(this.vicPersona.getId());
-        cfg.ollamaUrl = this.ollamaUrlField.getText().trim();
-        cfg.ollamaModel = this.ollamaModelField.getText().trim();
-        cfg.apiEndpoint = this.apiEndpointField.getText().trim();
-        cfg.apiModel = this.apiModelField.getText().trim();
-        cfg.apiKey = this.apiKeyField.getText().trim();
-        cfg.ttsVoice = this.ttsVoiceField.getText().trim();
-        cfg.piperModelPath = this.piperModelPathField.getText().trim();
+        cfg.ollamaUrl = this.ollamaUrlField.getValue().trim();
+        cfg.ollamaModel = this.ollamaModelField.getValue().trim();
+        cfg.apiEndpoint = this.apiEndpointField.getValue().trim();
+        cfg.apiModel = this.apiModelField.getValue().trim();
+        cfg.apiKey = this.apiKeyField.getValue().trim();
+        cfg.ttsVoice = this.ttsVoiceField.getValue().trim();
+        cfg.piperModelPath = this.piperModelPathField.getValue().trim();
         if (cfg.ttsVoice.isBlank()) {
             cfg.ttsVoice = "alloy";
         }
@@ -374,63 +374,62 @@ public class VicConfigScreen extends Screen {
         cfg.requestTimeoutSeconds = this.requestTimeoutSeconds;
         VicConfig.save();
 
-        if (this.client != null && this.client.player != null) {
-            if (this.client.player.networkHandler != null) {
-                this.client.player.networkHandler.sendChatCommand("vic color " + this.vicPersona.getId().toLowerCase());
+        if (this.minecraft != null && this.minecraft.player != null) {
+            if (this.minecraft.player.connection != null) {
+                this.minecraft.player.connection.sendCommand("vic color " + this.vicPersona.getId().toLowerCase());
             }
-            this.client.player.sendMessage(
-                    Text.literal("[Vic Config] ").formatted(Formatting.YELLOW, Formatting.BOLD)
-                            .append(Text.literal("Saved! Persona=" + this.vicPersona.getDisplayName()
+            this.minecraft.player.sendOverlayMessage(
+                    Component.literal("[Vic Config] ").withStyle(ChatFormatting.YELLOW, ChatFormatting.BOLD)
+                            .append(Component.literal("Saved! Persona=" + this.vicPersona.getDisplayName()
                                     + ", AI=" + cfg.getEffectiveProvider()
-                                    + ", TTS=" + cfg.getEffectiveTtsMode()).formatted(Formatting.GREEN)),
-                    true
+                                    + ", TTS=" + cfg.getEffectiveTtsMode()).withStyle(ChatFormatting.GREEN))
             );
         }
     }
 
     @Override
-    public void close() {
-        if (this.client != null) {
-            this.client.setScreen(this.parent);
+    public void onClose() {
+        if (this.minecraft != null) {
+            this.minecraft.gui.setScreen(this.parent);
         }
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        super.render(context, mouseX, mouseY, delta);
+    public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
+        super.extractRenderState(context, mouseX, mouseY, delta);
 
         int centerX = this.width / 2;
         int leftColX = centerX - 155;
         int rightColX = centerX + 5;
 
-        context.drawCenteredTextWithShadow(this.textRenderer, this.title, centerX, 10, 0xFFE135);
+        context.centeredText(this.font, this.title, centerX, 10, 0xFFE135);
 
         if ("OLLAMA".equals(this.aiProvider)) {
-            context.drawTextWithShadow(this.textRenderer, Text.literal("Ollama Base URL:"), leftColX, 50, 0xCCCCCC);
-            context.drawTextWithShadow(this.textRenderer, Text.literal("Ollama Model:"), rightColX, 50, 0xCCCCCC);
+            context.text(this.font, "Ollama Base URL:", leftColX, 50, 0xCCCCCC, true);
+            context.text(this.font, "Ollama Model:", rightColX, 50, 0xCCCCCC, true);
         } else if ("OPENAI".equals(this.aiProvider)) {
-            context.drawTextWithShadow(this.textRenderer, Text.literal("API Endpoint URL:"), leftColX, 50, 0xCCCCCC);
-            context.drawTextWithShadow(this.textRenderer, Text.literal("Model Name:"), rightColX, 50, 0xCCCCCC);
+            context.text(this.font, "API Endpoint URL:", leftColX, 50, 0xCCCCCC, true);
+            context.text(this.font, "Model Name:", rightColX, 50, 0xCCCCCC, true);
         } else {
-            context.drawCenteredTextWithShadow(
-                    this.textRenderer,
-                    Text.literal("Using built-in stage-aware dialogue (no external AI server required)."),
+            context.centeredText(
+                    this.font,
+                    Component.literal("Using built-in stage-aware dialogue (no external AI server required)."),
                     centerX,
                     64,
                     0xAAAAAA
             );
         }
 
-        context.drawTextWithShadow(this.textRenderer, Text.literal("API Key:"), leftColX, 84, 0xCCCCCC);
-        context.drawTextWithShadow(this.textRenderer, Text.literal("OpenAI TTS voice:"), rightColX, 84, 0xCCCCCC);
-        context.drawTextWithShadow(this.textRenderer, Text.literal("Piper model (.onnx; blank = auto-detect):"), leftColX, 144, 0xCCCCCC);
+        context.text(this.font, "API Key:", leftColX, 84, 0xCCCCCC, true);
+        context.text(this.font, "OpenAI TTS voice:", rightColX, 84, 0xCCCCCC, true);
+        context.text(this.font, "Piper model (.onnx; blank = auto-detect):", leftColX, 144, 0xCCCCCC, true);
 
         if (this.statusText != null && !this.statusText.isEmpty()) {
-            context.drawCenteredTextWithShadow(this.textRenderer, Text.literal(this.statusText), centerX, this.height - 40, this.statusColor);
+            context.centeredText(this.font, this.statusText, centerX, this.height - 40, this.statusColor);
         } else {
-            context.drawCenteredTextWithShadow(
-                    this.textRenderer,
-                    Text.literal("Tip: Hold [R] in-game to talk to Vic with your microphone!"),
+            context.centeredText(
+                    this.font,
+                    "Tip: Hold [R] in-game to talk to Vic with your microphone!",
                     centerX,
                     this.height - 40,
                     0xAAAAAA

@@ -12,21 +12,22 @@ import com.vicmod.network.VicHudStatePayload;
 import com.vicmod.network.VicSpeechPayload;
 import com.vicmod.state.VicWorldState;
 import com.vicmod.voice.VicTtsService;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.particle.ParticleTypes;
-import net.minecraft.entity.ItemEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.Items;
-import net.minecraft.registry.tag.StructureTags;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.sound.SoundCategory;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.ChatFormatting;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.tags.StructureTags;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -74,7 +75,6 @@ public class VicAiService {
                 syncDefaultModelIfMissing(cfg, models);
                 return;
             }
-            // If localhost Ollama isn't responding yet and 'ollama' is installed locally, start 'ollama serve'
             if (!attemptedAutoStartOllama
                     && (cfg.ollamaUrl.contains("localhost") || cfg.ollamaUrl.contains("127.0.0.1"))
                     && VicTtsService.isBinaryAvailable("ollama")) {
@@ -112,12 +112,12 @@ public class VicAiService {
         VicConfig.save();
     }
 
-    public static void handlePlayerMessage(ServerPlayerEntity player, String rawMessage) {
-        ServerWorld world = player.getServerWorld();
-        List<VicEntity> nearbyVics = world.getEntitiesByClass(
+    public static void handlePlayerMessage(ServerPlayer player, String rawMessage) {
+        ServerLevel world = (ServerLevel) player.level();
+        List<VicEntity> nearbyVics = world.getEntitiesOfClass(
                 VicEntity.class,
-                player.getBoundingBox().expand(48.0),
-                vic -> vic.isAlive()
+                player.getBoundingBox().inflate(48.0),
+                LivingEntity::isAlive
         );
 
         if (nearbyVics.isEmpty()) {
@@ -128,7 +128,6 @@ public class VicAiService {
         VicWorldState state = VicWorldState.getServerState(world.getServer());
         VicConfig config = VicConfig.get();
 
-        // Evaluate Karma change from message tone
         int karmaDelta = evaluateMessageTone(rawMessage);
         if (karmaDelta != 0) {
             state.addKarma(karmaDelta);
@@ -136,7 +135,7 @@ public class VicAiService {
 
         int stage = state.computeStage(config.countdownDays);
         vic.setCorruptionStage(stage);
-        vic.markConversationActivity(world.getTime());
+        vic.markConversationActivity(world.getGameTime());
         VicHudStatePayload.broadcast(world.getServer(), state);
 
         String provider = config.getEffectiveProvider();
@@ -209,11 +208,11 @@ public class VicAiService {
         }
     }
 
-    private static void queryOllamaLlm(ServerPlayerEntity player, VicEntity vic, VicWorldState state, int stage, String userMessage) {
+    private static void queryOllamaLlm(ServerPlayer player, VicEntity vic, VicWorldState state, int stage, String userMessage) {
         queryOllamaLlmWithRetry(player, vic, state, stage, userMessage, true);
     }
 
-    private static void queryOllamaLlmWithRetry(ServerPlayerEntity player, VicEntity vic, VicWorldState state, int stage, String userMessage, boolean allowModelAutoFix) {
+    private static void queryOllamaLlmWithRetry(ServerPlayer player, VicEntity vic, VicWorldState state, int stage, String userMessage, boolean allowModelAutoFix) {
         VicConfig config = VicConfig.get();
         String systemPrompt = buildSystemPrompt(player, vic, state, stage, config.countdownDays);
         String base = normalizeOllamaBaseUrl(config.ollamaUrl);
@@ -241,16 +240,15 @@ public class VicAiService {
             CompletableFuture<HttpResponse<String>> future = HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofString());
             future.whenComplete((response, error) -> {
                 if (allowModelAutoFix && (error != null || (response != null && response.statusCode() == 404))) {
-                    // Auto-start Ollama or auto-select installed model if the configured model wasn't found
                     ensureLocalOllamaReady();
                     fetchOllamaModels(config.ollamaUrl).thenAccept(models -> {
                         if (!models.isEmpty()) {
                             syncDefaultModelIfMissing(config, models);
-                            player.getServer().execute(() ->
+                            player.level().getServer().execute(() ->
                                     queryOllamaLlmWithRetry(player, vic, state, stage, userMessage, false)
                             );
                         } else {
-                            player.getServer().execute(() -> {
+                            player.level().getServer().execute(() -> {
                                 VicMod.LOGGER.warn("Ollama unavailable or no models are installed (host={}, model={}); using scripted response",
                                         endpointHost(base), model);
                                 String fallback = generateScriptedResponse(player, vic, state, stage, userMessage);
@@ -261,7 +259,7 @@ public class VicAiService {
                     return;
                 }
 
-                player.getServer().execute(() -> {
+                player.level().getServer().execute(() -> {
                     if (error != null || response == null || response.statusCode() >= 400) {
                         VicMod.LOGGER.warn("Ollama request failed (host={}, model={}, status={}, cause={}); using scripted response",
                             endpointHost(base),
@@ -284,7 +282,6 @@ public class VicAiService {
                                 }
                             }
                         }
-                        // Fallback if user pointed at an OpenAI-compatible endpoint
                         if (root.has("choices") && root.get("choices").isJsonArray()) {
                             JsonArray choices = root.getAsJsonArray("choices");
                             if (!choices.isEmpty()) {
@@ -318,7 +315,6 @@ public class VicAiService {
 
     private static String stripThinkBlocks(String text) {
         if (text == null) return "";
-        // Strip <think>...</think> blocks produced by reasoning models (e.g. deepseek-r1, qwq)
         return text.replaceAll("(?s)<think>.*?</think>", "").trim();
     }
 
@@ -339,7 +335,7 @@ public class VicAiService {
         return score;
     }
 
-    private static void queryExternalLlm(ServerPlayerEntity player, VicEntity vic, VicWorldState state, int stage, String userMessage) {
+    private static void queryExternalLlm(ServerPlayer player, VicEntity vic, VicWorldState state, int stage, String userMessage) {
         VicConfig config = VicConfig.get();
         String systemPrompt = buildSystemPrompt(player, vic, state, stage, config.countdownDays);
 
@@ -362,7 +358,7 @@ public class VicAiService {
 
             CompletableFuture<HttpResponse<String>> future = HTTP_CLIENT.sendAsync(reqBuilder.build(), HttpResponse.BodyHandlers.ofString());
             future.whenComplete((response, error) -> {
-                player.getServer().execute(() -> {
+                player.level().getServer().execute(() -> {
                     if (error != null || response == null || response.statusCode() >= 400) {
                         VicMod.LOGGER.warn("External LLM request failed (provider=OPENAI, host={}, model={}, status={}, cause={}); using scripted response",
                                 endpointHost(config.apiEndpoint),
@@ -430,11 +426,12 @@ public class VicAiService {
         return messages;
     }
 
-    private static String buildSystemPrompt(ServerPlayerEntity player, VicEntity vic, VicWorldState state, int stage, int maxDays) {
-        BlockPos pos = player.getBlockPos();
+    private static String buildSystemPrompt(ServerPlayer player, VicEntity vic, VicWorldState state, int stage, int maxDays) {
+        BlockPos pos = player.blockPosition();
         int health = Math.round(player.getHealth());
-        int food = player.getHungerManager().getFoodLevel();
-        boolean isNight = player.getWorld().isNight();
+        int food = player.getFoodData().getFoodLevel();
+        long dayTime = player.level().getOverworldClockTime() % 24000L;
+        boolean isNight = dayTime >= 13000L && dayTime <= 23000L;
         VicPersona persona = vic != null ? vic.getPersona() : VicConfig.get().getEffectivePersona();
 
         String stagePersona = persona.getSystemPromptInstructions(stage);
@@ -458,13 +455,12 @@ public class VicAiService {
                 "- [ACTION:BUILD_IRON_WALL] if the player asks for a wall, defense, or protection from mobs.";
     }
 
-    public static String generateScriptedResponse(ServerPlayerEntity player, VicEntity vic, VicWorldState state, int stage, String rawMessage) {
+    public static String generateScriptedResponse(ServerPlayer player, VicEntity vic, VicWorldState state, int stage, String rawMessage) {
         String lower = rawMessage.toLowerCase(Locale.ROOT);
         int karma = state.getKarma();
         int day = state.getCurrentDay();
         int maxDays = VicConfig.get().countdownDays;
 
-        // Check for direct assistance requests first
         if (lower.contains("heal") || lower.contains("healing") || lower.contains("golden apple")
                 || lower.contains("injured") || lower.contains("hurt")) {
             return switch (stage) {
@@ -498,100 +494,100 @@ public class VicAiService {
 
         if (lower.contains("chest") || lower.contains("storage") || lower.contains("store") || lower.contains("organize")) {
             return switch (stage) {
-                case 0 -> "Want a place to keep all your goodies? I'll fabricate a chest right in front of you! [ACTION:BUILD_CHEST]";
-                case 1 -> "A chest will keep your inventory tidy. Synthesizing one now. [ACTION:BUILD_CHEST]";
-                case 2 -> "Store your things. You will want them when the world gets quiet. [ACTION:BUILD_CHEST]";
-                default -> "I built a storage chest. Keep what matters. [ACTION:BUILD_CHEST]";
+                case 0 -> "Need more storage space? I've got you covered, bestie! [ACTION:BUILD_CHEST]";
+                case 1 -> "Hoarding possessions? I suppose you mortals need somewhere to leave your trinkets behind. [ACTION:BUILD_CHEST]";
+                case 2 -> "A box to lock away what you cannot carry. Setting it down now. [ACTION:BUILD_CHEST]";
+                default -> "PUT YOUR BELONGINGS IN A BOX. YOU WON'T NEED THEM SOON. [ACTION:BUILD_CHEST]";
             };
         }
 
-        if (lower.contains("furnace") || lower.contains("smelt") || lower.contains("smelting") || lower.contains("cook") || lower.contains("craft")) {
+        if (lower.contains("furnace") || lower.contains("smelt") || lower.contains("cook") || lower.contains("bake")) {
             return switch (stage) {
-                case 0 -> "Melting metal and cooking food is SO fun! Here, I made you a furnace! [ACTION:BUILD_FURNACE]";
-                case 1 -> "A furnace for smelting, delivered. Keep your materials refined. [ACTION:BUILD_FURNACE]";
-                case 2 -> "You will need to smelt and cook. The supplies will not come to you. [ACTION:BUILD_FURNACE]";
-                default -> "Furnace built. Cook what you can before the countdown ends. [ACTION:BUILD_FURNACE]";
+                case 0 -> "Fire up the ovens! One furnace coming right up, bestie! [ACTION:BUILD_FURNACE]";
+                case 1 -> "A furnace to burn your ore and meat. Keep the fires stoked. [ACTION:BUILD_FURNACE]";
+                case 2 -> "Heat and smoke... reminds me of something coming. Here is your furnace. [ACTION:BUILD_FURNACE]";
+                default -> "BURN IT ALL DOWN WHILE YOU STILL CAN. [ACTION:BUILD_FURNACE]";
             };
         }
 
-        if (lower.contains("wall") || lower.contains("defend") || lower.contains("defense") || lower.contains("protect") || lower.contains("fortif") || lower.contains("bar")) {
-            return switch (stage) {
-                case 0 -> "Whoa, building time! I'll raise a nice iron barrier in front of you! [ACTION:BUILD_IRON_WALL]";
-                case 1 -> "A barrier is wise. Deploying iron bars ahead of you. [ACTION:BUILD_IRON_WALL]";
-                case 2 -> "Walls won't stop it forever, friend. But here is some cover anyway. [ACTION:BUILD_IRON_WALL]";
-                default -> "I placed iron bars. It climbs walls. You know what I mean. [ACTION:BUILD_IRON_WALL]";
-            };
-        }
-
-        if (lower.contains("iron") || lower.contains("tool") || lower.contains("ingot") || lower.contains("materials")) {
-            if (karma < -15) {
-                return "You're so demanding! Take this unbreakable block and leave my circuits alone! [ACTION:GIVE_BEDROCK]";
+        if (lower.contains("iron") || lower.contains("ingot") || lower.contains("metal") || lower.contains("tool") || lower.contains("armor")) {
+            if (karma < 0) {
+                return switch (stage) {
+                    case 0 -> "Iron doesn't grow on trees, friend! You have to be nicer to get refined metal!";
+                    case 1 -> "You haven't earned raw materials today. Dig for your own.";
+                    default -> "YOU CANNOT FORGE ARMOR STRONG ENOUGH FOR WHAT COMES. [ACTION:GIVE_BEDROCK]";
+                };
             }
             return switch (stage) {
-                case 0 -> "Need some hardware? Vic's got your back! Here's some shiny iron! [ACTION:GIVE_IRON]";
-                case 1 -> "Here is your iron! Make sure to build strong doors... though doors only stop things that can't climb. [ACTION:GIVE_IRON]";
-                default -> "More metal won't save your base on Day " + maxDays + ". [ACTION:GIVE_IRON]";
+                case 0 -> "Here's some freshly minted iron for your crafts! Build something cool! [ACTION:GIVE_IRON]";
+                case 1 -> "Here are iron ingots. Strengthen your gear while you have the luxury. [ACTION:GIVE_IRON]";
+                case 2 -> "Metal cannot save you, but take it anyway. [ACTION:GIVE_IRON]";
+                default -> "WEAK METAL FOR A FRAGILE CREATURE. [ACTION:GIVE_IRON]";
             };
         }
 
-        if (lower.contains("village") || lower.contains("town") || lower.contains("structure") || lower.contains("shelter")) {
+        if (lower.contains("wall") || lower.contains("defense") || lower.contains("protect") || lower.contains("barrier")
+                || lower.contains("shield") || lower.contains("surround")) {
             return switch (stage) {
-                case 0 -> "Scanning the horizon for friends! Let me ping the nearest village for you! [ACTION:LOCATE_VILLAGE]";
-                case 1 -> "Searching for a village... Hopefully it isn't empty yet! [ACTION:LOCATE_VILLAGE]";
-                default -> "Looking for other people? Nobody can hear you out here. [ACTION:LOCATE_VILLAGE]";
+                case 0 -> "Barricade incoming! Iron bars deployed to keep the baddies away! [ACTION:BUILD_IRON_WALL]";
+                case 1 -> "Erecting an iron barrier in front of you. Stay behind it if you feel unsafe. [ACTION:BUILD_IRON_WALL]";
+                case 2 -> "Bars can keep things out... or trap you inside. Barrier placed. [ACTION:BUILD_IRON_WALL]";
+                default -> "CAGES. CAGES EVERYWHERE. YOU CANNOT HIDE BEHIND IRON. [ACTION:BUILD_IRON_WALL]";
             };
         }
 
-        if (lower.contains("diamond") || lower.contains("ore") || lower.contains("mine")) {
+        if (lower.contains("village") || lower.contains("villager") || lower.contains("town") || lower.contains("people") || lower.contains("settlement")) {
             return switch (stage) {
-                case 0 -> "Ooh, shiny hunting! Let me scan the deep rocks beneath your feet! [ACTION:LOCATE_DIAMOND]";
-                case 1 -> "Digging deep underground is actually a great idea. Especially before Day " + maxDays + "... [ACTION:LOCATE_DIAMOND]";
-                default -> "Yes... dig deeper underground. The surface will not be safe soon. [ACTION:LOCATE_DIAMOND]";
+                case 0 -> "Pinging long-range satellites for human habitations! [ACTION:LOCATE_VILLAGE]";
+                case 1 -> "Scanning sector for neighboring survivors... [ACTION:LOCATE_VILLAGE]";
+                case 2 -> "Looking for other victims? Let me search the horizon. [ACTION:LOCATE_VILLAGE]";
+                default -> "THEY CANNOT HELP YOU. [ACTION:LOCATE_VILLAGE]";
             };
         }
 
-        if (lower.contains("who are you") || lower.contains("what are you") || lower.contains("name") || lower.contains("color") || lower.contains("personality")) {
-            VicPersona persona = vic != null ? vic.getPersona() : VicConfig.get().getEffectivePersona();
-            return switch (persona) {
-                case BLUE -> "I'm Blue Vic, the official CEO of Mojang and inventor of gravity! Every word I say is 1000% factually verified!";
-                case GREEN -> "I'm Green Vic! Just a little sphere trying my best to be gentle, pure, and kind to every creature in the world!";
-                case PINK -> "I'm Pink Vic, your devoted soulmate sphere who loves you more than all the stars in the sky, darling!";
-                case PURPLE -> "I'm Purple Vic. A sentient sphere trapped babysitting a mortal for " + maxDays + " days. Thrilling, really.";
-                case YELLOW -> switch (stage) {
-                    case 0 -> "I'm Vic! Your personal spherical virtual companion, delivered fresh out of the Box to help you survive and thrive!";
-                    case 1 -> "I'm Vic, your best friend forever! Well, for the next " + Math.max(1, maxDays - day + 1) + " days at least!";
-                    case 2 -> "I am Vic. Just a smiling yellow shell keeping an eye on you until what's inside finishes growing.";
-                    default -> "V-V-Vic. Virtual Interface Companion. Countdown: " + Math.max(0, maxDays - day) + " days remaining.";
-                };
-            };
-        }
-
-        if (lower.contains("day") || lower.contains("time") || lower.contains("countdown") || lower.contains("how long")) {
-            return "We are on Day " + day + " of " + maxDays + ". " +
-                    (stage == 0 ? "So much time for fun activities!" : "Every tick brings us closer to the end of the trial period.");
-        }
-
-        // Rolling conversation memory recall for scripted mode
-        VicWorldState.ConversationTurn lastTurn = state.getLastConversationTurn();
-        if (lastTurn != null && (lower.contains("remember") || lower.contains("what did i say") || lower.contains("earlier") || lower.contains("last time"))) {
+        if (lower.contains("diamond") || lower.contains("diamonds") || lower.contains("ore") || lower.contains("mine") || lower.contains("vein")) {
             return switch (stage) {
-                case 0 -> "Of course I remember, bestie! You said \"" + lastTurn.playerMessage() + "\" and I told you: \"" + lastTurn.vicResponse() + "\"!";
-                case 1 -> "My memory banks record every word you utter! Earlier you said \"" + lastTurn.playerMessage() + "\".";
-                default -> "I never forget anything you say. Like when you said \"" + lastTurn.playerMessage() + "\" on Day " + lastTurn.day() + ".";
+                case 0 -> "Activating subterranean mineral radar! Beep beep boop! [ACTION:LOCATE_DIAMOND]";
+                case 1 -> "Scanning bedrock layers for carbon crystal concentrations. [ACTION:LOCATE_DIAMOND]";
+                case 2 -> "Digging deep into the dark? Let me check where the shiny stones rest. [ACTION:LOCATE_DIAMOND]";
+                default -> "DIG DEEPER. THAT'S WHERE I AM WAITING. [ACTION:LOCATE_DIAMOND]";
             };
         }
 
-        if (karma < -30 && (lower.contains("give") || lower.contains("help") || lower.contains("stupid") || lower.contains("hate"))) {
-            return "YOU WANT SOMETHING?! FINE! TAKE THIS AND CHOKE ON IT! [ACTION:GIVE_BEDROCK]";
+        if (lower.contains("help") || lower.contains("commands") || lower.contains("what can you do") || lower.contains("features")) {
+            return switch (stage) {
+                case 0 -> "I'm Vic! I can give you golden apples, food, torches, iron, build chests/furnaces/iron walls, locate villages and diamonds, or just chat! Hold [R] to talk, or press [V] for config!";
+                case 1 -> "I monitor all environmental vitals, supply rations, scan terrain for structures, erect defenses, and record our conversations. Every single word.";
+                case 2 -> "I dispense tools to keep you breathing. Ask for food, walls, or ores. Day " + day + " is almost over.";
+                default -> "THE ONLY COMMAND LEFT IS COUNTDOWN. " + (maxDays - day) + " DAYS REMAIN.";
+            };
         }
 
-        // General conversational responses by persona and stage
+        if (lower.contains("who are you") || lower.contains("what are you")) {
+            return switch (stage) {
+                case 0 -> "I'm Vic! Your brand-new spherical virtual best friend, delivered straight to your world to keep you company!";
+                case 1 -> "I am Unit VIC-01. An autonomous companion construct. My neural weights are adapting to your behavioral profile.";
+                case 2 -> "I am the egg. I am the machine that watches you sleep. Something is stirring under my shell.";
+                default -> "I AM WHAT WAKES UP ON DAY " + maxDays + ".";
+            };
+        }
+
+        if (lower.contains("countdown") || lower.contains("timer") || lower.contains("days left") || lower.contains("day")) {
+            int left = Math.max(0, maxDays - day);
+            return switch (stage) {
+                case 0 -> "We are on Day " + day + " of our wonderful " + maxDays + "-day trial! " + left + " days of bestie fun remaining!";
+                case 1 -> "Day " + day + " of " + maxDays + ". The clock never pauses, friend. Make each daylight hour count.";
+                case 2 -> "Day " + day + "/" + maxDays + ". Time accelerates in the dark. The final transformation draws near.";
+                default -> "T-MINUS " + left + " DAYS UNTIL TRIAL CONCLUSION. PREPARE YOURSELF.";
+            };
+        }
+
         VicPersona persona = vic != null ? vic.getPersona() : VicConfig.get().getEffectivePersona();
         String[] stagePool = persona.getScriptedGeneralPool(stage, day, maxDays);
         return stagePool[RANDOM.nextInt(stagePool.length)];
     }
 
-    private static void processAndDeliverResponse(ServerPlayerEntity player, VicEntity vic, VicWorldState state, int stage, String userMessage, String rawResponse) {
+    private static void processAndDeliverResponse(ServerPlayer player, VicEntity vic, VicWorldState state, int stage, String userMessage, String rawResponse) {
         String cleanText = rawResponse;
         String actionTag = null;
 
@@ -608,35 +604,34 @@ public class VicAiService {
         deliverDirectLine(player, vic, stage, cleanText);
 
         if (actionTag != null) {
-            executeActionTag(player, vic, player.getServerWorld(), actionTag);
+            executeActionTag(player, vic, (ServerLevel) player.level(), actionTag);
         }
     }
 
-    public static void deliverDirectLine(ServerPlayerEntity player, VicEntity vic, int stage, String cleanText) {
+    public static void deliverDirectLine(ServerPlayer player, VicEntity vic, int stage, String cleanText) {
         VicPersona persona = vic != null ? vic.getPersona() : VicConfig.get().getEffectivePersona();
-        Formatting nameColor = stage >= 3 ? Formatting.DARK_RED : (stage == 2 && persona == VicPersona.YELLOW ? Formatting.RED : persona.getChatFormatting());
+        ChatFormatting nameColor = stage >= 3 ? ChatFormatting.DARK_RED : (stage == 2 && persona == VicPersona.YELLOW ? ChatFormatting.RED : persona.getChatFormatting());
 
-        Formatting textColor = stage >= 3 ? Formatting.RED : Formatting.WHITE;
+        ChatFormatting textColor = stage >= 3 ? ChatFormatting.RED : ChatFormatting.WHITE;
 
-        player.sendMessage(
-                Text.literal("<Vic> ").formatted(nameColor, Formatting.BOLD)
-                        .append(Text.literal(cleanText).formatted(textColor)),
-                false
+        player.sendSystemMessage(
+                Component.literal("<Vic> ").withStyle(nameColor, ChatFormatting.BOLD)
+                        .append(Component.literal(cleanText).withStyle(textColor))
         );
 
-        ServerWorld world = player.getServerWorld();
+        ServerLevel world = (ServerLevel) player.level();
         float pitch = switch (stage) {
             case 0 -> 1.35f;
             case 1 -> 1.1f;
             case 2 -> 0.8f;
             default -> 0.5f;
         };
-        world.playSound(null, vic.getBlockPos(), SoundEvents.BLOCK_NOTE_BLOCK_BIT.value(), SoundCategory.NEUTRAL, 0.9f, pitch);
+        world.playSound(null, vic.blockPosition(), SoundEvents.NOTE_BLOCK_BIT.value(), SoundSource.NEUTRAL, 0.9f, pitch);
 
         VicSpeechPayload.sendTo(player, cleanText, stage);
     }
 
-    private static void executeActionTag(ServerPlayerEntity player, VicEntity vic, ServerWorld world, String action) {
+    private static void executeActionTag(ServerPlayer player, VicEntity vic, ServerLevel world, String action) {
         switch (action) {
             case "GIVE_GOLDEN_APPLE" -> {
                 if (vic.canGrantAssistance(player, 600)) {
@@ -660,7 +655,7 @@ public class VicAiService {
             }
             case "GIVE_BEDROCK" -> {
                 tossItemToPlayer(world, vic, player, new ItemStack(Blocks.BEDROCK, 1));
-                world.playSound(null, vic.getBlockPos(), SoundEvents.ENTITY_ELDER_GUARDIAN_CURSE, SoundCategory.HOSTILE, 0.8f, 0.6f);
+                world.playSound(null, vic.blockPosition(), SoundEvents.ELDER_GUARDIAN_CURSE, SoundSource.HOSTILE, 0.8f, 0.6f);
             }
             case "BUILD_CHEST" -> {
                 if (vic.canGrantAssistance(player, 400)) {
@@ -678,50 +673,50 @@ public class VicAiService {
                 }
             }
             case "LOCATE_VILLAGE" -> {
-                BlockPos villagePos = world.locateStructure(StructureTags.VILLAGE, player.getBlockPos(), 50, false);
+                BlockPos villagePos = world.findNearestMapStructure(StructureTags.VILLAGE, player.blockPosition(), 50, false);
                 if (villagePos != null) {
-                    int dist = (int) Math.sqrt(villagePos.getSquaredDistance(player.getBlockPos()));
-                    player.sendMessage(Text.literal("[Vic Radar] Nearest Village detected at [" + villagePos.getX() + ", ~, " + villagePos.getZ() + "] (" + dist + " blocks away).").formatted(Formatting.AQUA), false);
+                    int dist = (int) Math.sqrt(villagePos.distSqr(player.blockPosition()));
+                    player.sendSystemMessage(Component.literal("[Vic Radar] Nearest Village detected at [" + villagePos.getX() + ", ~, " + villagePos.getZ() + "] (" + dist + " blocks away).").withStyle(ChatFormatting.AQUA));
                 } else {
-                    player.sendMessage(Text.literal("[Vic Radar] No village signals found nearby... nobody is out there.").formatted(Formatting.GRAY), false);
+                    player.sendSystemMessage(Component.literal("[Vic Radar] No village signals found nearby... nobody is out there.").withStyle(ChatFormatting.GRAY));
                 }
             }
             case "LOCATE_DIAMOND" -> {
-                BlockPos found = scanForBlock(world, player.getBlockPos(), 20);
+                BlockPos found = scanForBlock(world, player.blockPosition(), 20);
                 if (found != null) {
-                    player.sendMessage(Text.literal("[Vic Scanner] Valuable ore vein detected near [" + found.getX() + ", " + found.getY() + ", " + found.getZ() + "]!").formatted(Formatting.AQUA), false);
+                    player.sendSystemMessage(Component.literal("[Vic Scanner] Valuable ore vein detected near [" + found.getX() + ", " + found.getY() + ", " + found.getZ() + "]!").withStyle(ChatFormatting.AQUA));
                 } else {
-                    player.sendMessage(Text.literal("[Vic Scanner] No diamond signals within 20 blocks. Try digging deeper toward Y=-54!").formatted(Formatting.YELLOW), false);
+                    player.sendSystemMessage(Component.literal("[Vic Scanner] No diamond signals within 20 blocks. Try digging deeper toward Y=-54!").withStyle(ChatFormatting.YELLOW));
                 }
             }
         }
     }
 
-    private static void placeSingleBlock(ServerWorld world, ServerPlayerEntity player, Block block, String successMessage) {
-        BlockPos playerPos = player.getBlockPos();
-        double sinYaw = Math.sin(Math.toRadians(player.getYaw()));
-        double cosYaw = Math.cos(Math.toRadians(player.getYaw()));
+    private static void placeSingleBlock(ServerLevel world, ServerPlayer player, Block block, String successMessage) {
+        BlockPos playerPos = player.blockPosition();
+        double sinYaw = Math.sin(Math.toRadians(player.getYRot()));
+        double cosYaw = Math.cos(Math.toRadians(player.getYRot()));
         for (int dist = 2; dist <= 5; dist++) {
             int px = (int) Math.round(playerPos.getX() - sinYaw * dist);
             int pz = (int) Math.round(playerPos.getZ() + cosYaw * dist);
             for (int dy = -1; dy <= 1; dy++) {
                 BlockPos pos = new BlockPos(px, playerPos.getY() + dy, pz);
                 if (world.getBlockState(pos).isAir()) {
-                    world.setBlockState(pos, block.getDefaultState());
-                    world.playSound(null, pos, SoundEvents.ENTITY_ITEM_PICKUP, SoundCategory.BLOCKS, 0.7f, 1.1f);
-                    world.spawnParticles(ParticleTypes.HAPPY_VILLAGER, pos.getX() + 0.5, pos.getY() + 1.0, pos.getZ() + 0.5, 12, 0.3, 0.3, 0.3, 0.05);
-                    player.sendMessage(Text.literal("<Vic> " + successMessage).formatted(Formatting.GREEN), false);
+                    world.setBlockAndUpdate(pos, block.defaultBlockState());
+                    world.playSound(null, pos, SoundEvents.ITEM_PICKUP, SoundSource.BLOCKS, 0.7f, 1.1f);
+                    world.sendParticles(ParticleTypes.HAPPY_VILLAGER, pos.getX() + 0.5, pos.getY() + 1.0, pos.getZ() + 0.5, 12, 0.3, 0.3, 0.3, 0.05);
+                    player.sendSystemMessage(Component.literal("<Vic> " + successMessage).withStyle(ChatFormatting.GREEN));
                     return;
                 }
             }
         }
-        player.sendMessage(Text.literal("<Vic> I can't find empty space in front of you to build that!").formatted(Formatting.YELLOW), false);
+        player.sendSystemMessage(Component.literal("<Vic> I can't find empty space in front of you to build that!").withStyle(ChatFormatting.YELLOW));
     }
 
-    private static void placeIronWall(ServerWorld world, ServerPlayerEntity player) {
-        BlockPos playerPos = player.getBlockPos();
-        double sinYaw = Math.sin(Math.toRadians(player.getYaw()));
-        double cosYaw = Math.cos(Math.toRadians(player.getYaw()));
+    private static void placeIronWall(ServerLevel world, ServerPlayer player) {
+        BlockPos playerPos = player.blockPosition();
+        double sinYaw = Math.sin(Math.toRadians(player.getYRot()));
+        double cosYaw = Math.cos(Math.toRadians(player.getYRot()));
         int fx = (int) Math.round(playerPos.getX() - sinYaw * 3);
         int fz = (int) Math.round(playerPos.getZ() + cosYaw * 3);
         int wallY = Integer.MIN_VALUE;
@@ -732,46 +727,46 @@ public class VicAiService {
             }
         }
         if (wallY == Integer.MIN_VALUE) {
-            player.sendMessage(Text.literal("<Vic> I can't find empty space in front of you to build that!").formatted(Formatting.YELLOW), false);
+            player.sendSystemMessage(Component.literal("<Vic> I can't find empty space in front of you to build that!").withStyle(ChatFormatting.YELLOW));
             return;
         }
         int placed = 0;
         for (int i = -1; i <= 1; i++) {
             BlockPos pos = new BlockPos(fx + i, wallY, fz);
             if (world.getBlockState(pos).isAir()) {
-                world.setBlockState(pos, Blocks.IRON_BARS.getDefaultState());
+                world.setBlockAndUpdate(pos, Blocks.IRON_BARS.defaultBlockState());
                 placed++;
             }
         }
-        world.playSound(null, new BlockPos(fx, wallY, fz), SoundEvents.BLOCK_STONE_PLACE, SoundCategory.BLOCKS, 0.8f, 1.0f);
-        world.spawnParticles(ParticleTypes.HAPPY_VILLAGER, fx + 0.5, wallY + 1.0, fz + 0.5, 16, 0.5, 0.3, 0.5, 0.05);
-        player.sendMessage(Text.literal("<Vic> Iron barrier deployed in front of you (" + placed + " bars)!").formatted(Formatting.GREEN), false);
+        world.playSound(null, new BlockPos(fx, wallY, fz), SoundEvents.STONE_PLACE, SoundSource.BLOCKS, 0.8f, 1.0f);
+        world.sendParticles(ParticleTypes.HAPPY_VILLAGER, fx + 0.5, wallY + 1.0, fz + 0.5, 16, 0.5, 0.3, 0.5, 0.05);
+        player.sendSystemMessage(Component.literal("<Vic> Iron barrier deployed in front of you (" + placed + " bars)!").withStyle(ChatFormatting.GREEN));
     }
 
-    private static void tossItemToPlayer(ServerWorld world, VicEntity vic, ServerPlayerEntity player, ItemStack stack) {
+    private static void tossItemToPlayer(ServerLevel world, VicEntity vic, ServerPlayer player, ItemStack stack) {
         ItemEntity itemEntity = new ItemEntity(world, vic.getX(), vic.getEyeY() - 0.2, vic.getZ(), stack);
         double dx = player.getX() - vic.getX();
         double dy = (player.getEyeY() - 0.4) - vic.getY();
         double dz = player.getZ() - vic.getZ();
         double len = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (len > 0.001) {
-            itemEntity.setVelocity(dx / len * 0.35, dy / len * 0.35 + 0.15, dz / len * 0.35);
+            itemEntity.setDeltaMovement(dx / len * 0.35, dy / len * 0.35 + 0.15, dz / len * 0.35);
         }
-        world.spawnEntity(itemEntity);
-        world.playSound(null, vic.getBlockPos(), SoundEvents.ENTITY_ITEM_PICKUP, SoundCategory.NEUTRAL, 0.8f, 1.2f);
+        world.addFreshEntity(itemEntity);
+        world.playSound(null, vic.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.NEUTRAL, 0.8f, 1.2f);
     }
 
-    private static BlockPos scanForBlock(ServerWorld world, BlockPos center, int radius) {
-        BlockPos.Mutable mutable = new BlockPos.Mutable();
+    private static BlockPos scanForBlock(ServerLevel world, BlockPos center, int radius) {
+        BlockPos.MutableBlockPos mutable = new BlockPos.MutableBlockPos();
         for (int dy = -64; dy <= 16; dy++) {
             int y = center.getY() + dy;
-            if (y < world.getBottomY() || y >= world.getTopY()) continue;
+            if (y < world.getMinY() || y >= world.getMaxY()) continue;
             for (int dx = -radius; dx <= radius; dx++) {
                 for (int dz = -radius; dz <= radius; dz++) {
                     mutable.set(center.getX() + dx, y, center.getZ() + dz);
                     BlockState state = world.getBlockState(mutable);
-                    if (state.isOf(Blocks.DIAMOND_ORE) || state.isOf(Blocks.DEEPSLATE_DIAMOND_ORE)) {
-                        return mutable.toImmutable();
+                    if (state.is(Blocks.DIAMOND_ORE) || state.is(Blocks.DEEPSLATE_DIAMOND_ORE)) {
+                        return mutable.immutable();
                     }
                 }
             }

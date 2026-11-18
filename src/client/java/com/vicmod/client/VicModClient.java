@@ -1,5 +1,6 @@
 package com.vicmod.client;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.vicmod.VicMod;
 import com.vicmod.client.gui.VicConfigScreen;
@@ -15,74 +16,69 @@ import com.vicmod.config.VicConfig;
 import com.vicmod.network.VicHudStatePayload;
 import com.vicmod.network.VicSpeechPayload;
 import com.vicmod.registry.ModEntities;
-import com.vicmod.voice.VicVoiceInputService;
 import com.vicmod.voice.VicTtsService;
+import com.vicmod.voice.VicVoiceInputService;
 import net.fabricmc.api.ClientModInitializer;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.fabricmc.fabric.api.client.rendering.v1.EntityModelLayerRegistry;
 import net.fabricmc.fabric.api.client.rendering.v1.EntityRendererRegistry;
-import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.render.entity.model.EntityModelLayer;
-import net.minecraft.client.util.InputUtil;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
-import net.minecraft.util.Identifier;
-import org.lwjgl.glfw.GLFW;
+import net.fabricmc.fabric.api.client.rendering.v1.ModelLayerRegistry;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.KeyMapping;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.model.geom.ModelLayerLocation;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
+import net.minecraft.sounds.SoundEvents;
 
 public class VicModClient implements ClientModInitializer {
-    public static final EntityModelLayer VIC_BOX_LAYER = new EntityModelLayer(Identifier.of(VicMod.MOD_ID, "vic_box"), "main");
-    public static final EntityModelLayer VIC_LAYER = new EntityModelLayer(Identifier.of(VicMod.MOD_ID, "vic"), "main");
-    public static final EntityModelLayer VIC_DEMON_LAYER = new EntityModelLayer(Identifier.of(VicMod.MOD_ID, "vic_demon"), "main");
+    public static final ModelLayerLocation VIC_BOX_LAYER = new ModelLayerLocation(Identifier.fromNamespaceAndPath(VicMod.MOD_ID, "vic_box"), "main");
+    public static final ModelLayerLocation VIC_LAYER = new ModelLayerLocation(Identifier.fromNamespaceAndPath(VicMod.MOD_ID, "vic"), "main");
+    public static final ModelLayerLocation VIC_DEMON_LAYER = new ModelLayerLocation(Identifier.fromNamespaceAndPath(VicMod.MOD_ID, "vic_demon"), "main");
 
-    private static KeyBinding openConfigKey;
-    private static KeyBinding voicePttKey;
-    private static KeyBinding toggleFlashlightKey;
+    private static KeyMapping openConfigKey;
+    private static KeyMapping voicePttKey;
+    private static KeyMapping toggleFlashlightKey;
     private static boolean wasVoiceKeyHeld = false;
 
     @Override
     public void onInitializeClient() {
-        EntityModelLayerRegistry.registerModelLayer(VIC_BOX_LAYER, VicBoxEntityModel::getTexturedModelData);
-        EntityModelLayerRegistry.registerModelLayer(VIC_LAYER, VicEntityModel::getTexturedModelData);
-        EntityModelLayerRegistry.registerModelLayer(VIC_DEMON_LAYER, VicDemonEntityModel::getTexturedModelData);
+        ModelLayerRegistry.registerModelLayer(VIC_BOX_LAYER, VicBoxEntityModel::getTexturedModelData);
+        ModelLayerRegistry.registerModelLayer(VIC_LAYER, VicEntityModel::getTexturedModelData);
+        ModelLayerRegistry.registerModelLayer(VIC_DEMON_LAYER, VicDemonEntityModel::getTexturedModelData);
 
         EntityRendererRegistry.register(ModEntities.VIC_BOX, VicBoxEntityRenderer::new);
         EntityRendererRegistry.register(ModEntities.VIC, VicEntityRenderer::new);
         EntityRendererRegistry.register(ModEntities.VIC_DEMON, VicDemonEntityRenderer::new);
 
-        openConfigKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+        openConfigKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.vic.open_config",
-                InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_V,
-                "category.vic"
+                InputConstants.KEY_V,
+                KeyMapping.Category.MISC
         ));
 
-        voicePttKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+        voicePttKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.vic.voice_ptt",
-                InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_R,
-                "category.vic"
+                InputConstants.KEY_R,
+                KeyMapping.Category.MISC
         ));
 
-        toggleFlashlightKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+        toggleFlashlightKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.vic.toggle_flashlight",
-                InputUtil.Type.KEYSYM,
-                GLFW.GLFW_KEY_G,
-                "category.vic"
+                InputConstants.KEY_G,
+                KeyMapping.Category.MISC
         ));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            while (openConfigKey.wasPressed()) {
-                client.setScreen(new VicConfigScreen(client.currentScreen));
+            while (openConfigKey.consumeClick()) {
+                client.gui.setScreen(new VicConfigScreen(client.gui.screen()));
             }
-            while (toggleFlashlightKey.wasPressed()) {
+            while (toggleFlashlightKey.consumeClick()) {
                 VicControllerService.quickToggleFlashlight(client);
             }
 
@@ -91,18 +87,18 @@ public class VicModClient implements ClientModInitializer {
         });
 
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
-            dispatcher.register(ClientCommandManager.literal("vicconfig")
+            dispatcher.register(ClientCommands.literal("vicconfig")
                     .executes(ctx -> {
-                        MinecraftClient client = ctx.getSource().getClient();
-                        client.send(() -> client.setScreen(new VicConfigScreen(client.currentScreen)));
+                        Minecraft client = ctx.getSource().getClient();
+                        client.execute(() -> client.gui.setScreen(new VicConfigScreen(client.gui.screen())));
                         return 1;
                     }));
-            dispatcher.register(ClientCommandManager.literal("viclisten")
+            dispatcher.register(ClientCommands.literal("viclisten")
                     .executes(ctx -> {
                         startVoiceListen(ctx.getSource().getClient(), 4);
                         return 1;
                     })
-                    .then(ClientCommandManager.argument("seconds", IntegerArgumentType.integer(2, 12))
+                    .then(ClientCommands.argument("seconds", IntegerArgumentType.integer(2, 12))
                             .executes(ctx -> {
                                 int seconds = IntegerArgumentType.getInteger(ctx, "seconds");
                                 startVoiceListen(ctx.getSource().getClient(), seconds);
@@ -110,20 +106,20 @@ public class VicModClient implements ClientModInitializer {
                             })));
         });
 
-        ClientPlayNetworking.registerGlobalReceiver(VicSpeechPayload.ID, (payload, context) ->
+        ClientPlayNetworking.registerGlobalReceiver(VicSpeechPayload.TYPE, (payload, context) ->
             VicTtsService.speak(payload.text(), payload.stage()));
 
-        ClientPlayNetworking.registerGlobalReceiver(VicHudStatePayload.ID, (payload, context) ->
+        ClientPlayNetworking.registerGlobalReceiver(VicHudStatePayload.TYPE, (payload, context) ->
             context.client().execute(() -> VicHudOverlay.updateState(payload)));
 
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) ->
             client.execute(VicHudOverlay::reset));
 
-        HudRenderCallback.EVENT.register(VicHudOverlay::render);
+        HudElementRegistry.addLast(Identifier.fromNamespaceAndPath(VicMod.MOD_ID, "hud"), new VicHudOverlay());
     }
 
-    private void handlePushToTalkTick(MinecraftClient client) {
-        if (client.player == null || client.currentScreen != null) {
+    private void handlePushToTalkTick(Minecraft client) {
+        if (client.player == null || client.gui.screen() != null) {
             if (wasVoiceKeyHeld) {
                 wasVoiceKeyHeld = false;
                 finishVoiceRecording(client);
@@ -131,26 +127,24 @@ public class VicModClient implements ClientModInitializer {
             return;
         }
 
-        boolean pressed = voicePttKey.isPressed() || VicControllerService.isDpadVoiceHeld();
+        boolean pressed = voicePttKey.isDown() || VicControllerService.isDpadVoiceHeld();
         if (pressed && !wasVoiceKeyHeld) {
             wasVoiceKeyHeld = true;
             if ("OFF".equals(VicConfig.get().getEffectiveSttMode())) {
-                client.player.sendMessage(
-                        Text.literal("[Vic Voice] ").formatted(Formatting.RED)
-                                .append(Text.literal("Voice input is disabled. Press [V] to enable it.").formatted(Formatting.WHITE)),
-                        true
+                client.player.sendOverlayMessage(
+                        Component.literal("[Vic Voice] ").withStyle(ChatFormatting.RED)
+                                .append(Component.literal("Voice input is disabled. Press [V] to enable it.").withStyle(ChatFormatting.WHITE))
                 );
                 return;
             }
             if (VicVoiceInputService.startRecording()) {
-                client.player.playSound(SoundEvents.BLOCK_NOTE_BLOCK_CHIME.value(), 0.5f, 1.5f);
+                client.player.playSound(SoundEvents.NOTE_BLOCK_CHIME.value(), 0.5f, 1.5f);
             }
         } else if (pressed && VicVoiceInputService.isRecording()) {
             String releaseHint = VicControllerService.isControllerConnected() ? "[R / D-Pad Up]" : "[R]";
-            client.player.sendMessage(
-                    Text.literal("● REC ").formatted(Formatting.RED, Formatting.BOLD)
-                            .append(Text.literal("Listening... Release " + releaseHint + " to send to Vic").formatted(Formatting.YELLOW)),
-                    true
+            client.player.sendOverlayMessage(
+                    Component.literal("● REC ").withStyle(ChatFormatting.RED, ChatFormatting.BOLD)
+                            .append(Component.literal("Listening... Release " + releaseHint + " to send to Vic").withStyle(ChatFormatting.YELLOW))
             );
         } else if (!pressed && wasVoiceKeyHeld) {
             wasVoiceKeyHeld = false;
@@ -158,16 +152,15 @@ public class VicModClient implements ClientModInitializer {
         }
     }
 
-    private void finishVoiceRecording(MinecraftClient client) {
+    private void finishVoiceRecording(Minecraft client) {
         if (!VicVoiceInputService.isRecording()) {
             return;
         }
         if (client.player != null) {
-            client.player.playSound(SoundEvents.BLOCK_NOTE_BLOCK_CHIME.value(), 0.5f, 0.9f);
-            client.player.sendMessage(
-                    Text.literal("[Vic Voice] ").formatted(Formatting.AQUA, Formatting.BOLD)
-                            .append(Text.literal("Transcribing speech...").formatted(Formatting.WHITE)),
-                    true
+            client.player.playSound(SoundEvents.NOTE_BLOCK_CHIME.value(), 0.5f, 0.9f);
+            client.player.sendOverlayMessage(
+                    Component.literal("[Vic Voice] ").withStyle(ChatFormatting.AQUA, ChatFormatting.BOLD)
+                            .append(Component.literal("Transcribing speech...").withStyle(ChatFormatting.WHITE))
             );
         }
 
@@ -175,62 +168,56 @@ public class VicModClient implements ClientModInitializer {
             client.execute(() -> {
                 if (client.player == null) return;
                 if (result.success() && !result.text().isBlank()) {
-                    client.player.sendMessage(
-                            Text.literal("[Voice Sent] ").formatted(Formatting.GREEN, Formatting.BOLD)
-                                    .append(Text.literal("\"" + result.text() + "\"").formatted(Formatting.WHITE)),
-                            true
+                    client.player.sendOverlayMessage(
+                            Component.literal("[Voice Sent] ").withStyle(ChatFormatting.GREEN, ChatFormatting.BOLD)
+                                    .append(Component.literal("\"" + result.text() + "\"").withStyle(ChatFormatting.WHITE))
                     );
-                    if (client.player.networkHandler != null) {
-                        client.player.networkHandler.sendChatCommand("vic say " + result.text().replace('\n', ' ').replace('\r', ' ').trim());
+                    if (client.player.connection != null) {
+                        client.player.connection.sendCommand("vic say " + result.text().replace('\n', ' ').replace('\r', ' ').trim());
                     }
                 } else {
-                    client.player.sendMessage(
-                            Text.literal("[Vic Voice] ").formatted(Formatting.RED, Formatting.BOLD)
-                                    .append(Text.literal(result.errorMessage()).formatted(Formatting.YELLOW)),
-                            false
+                    client.player.sendSystemMessage(
+                            Component.literal("[Vic Voice] ").withStyle(ChatFormatting.RED, ChatFormatting.BOLD)
+                                    .append(Component.literal(result.errorMessage()).withStyle(ChatFormatting.YELLOW))
                     );
                 }
             });
         });
     }
 
-    private void startVoiceListen(MinecraftClient client, int seconds) {
+    private void startVoiceListen(Minecraft client, int seconds) {
         if (client.player == null) {
             return;
         }
         if ("OFF".equals(VicConfig.get().getEffectiveSttMode())) {
-            client.player.sendMessage(
-                    Text.literal("[Vic Voice] ").formatted(Formatting.RED)
-                            .append(Text.literal("Voice input is disabled. Press [V] to enable it.").formatted(Formatting.WHITE)),
-                    false
+            client.player.sendSystemMessage(
+                    Component.literal("[Vic Voice] ").withStyle(ChatFormatting.RED)
+                            .append(Component.literal("Voice input is disabled. Press [V] to enable it.").withStyle(ChatFormatting.WHITE))
             );
             return;
         }
 
-        client.player.sendMessage(
-                Text.literal("[Vic Voice] ").formatted(Formatting.AQUA, Formatting.BOLD)
-                        .append(Text.literal("Listening for " + seconds + " seconds... Speak your request to Vic.").formatted(Formatting.WHITE)),
-                true
+        client.player.sendOverlayMessage(
+                Component.literal("[Vic Voice] ").withStyle(ChatFormatting.AQUA, ChatFormatting.BOLD)
+                        .append(Component.literal("Listening for " + seconds + " seconds... Speak your request to Vic.").withStyle(ChatFormatting.WHITE))
         );
         VicVoiceInputService.recordFixedDurationAndTranscribe(seconds, result -> client.execute(() -> {
             if (client.player == null) {
                 return;
             }
             if (result.success() && !result.text().isBlank()) {
-                client.player.sendMessage(
-                        Text.literal("[Voice Sent] ").formatted(Formatting.GREEN, Formatting.BOLD)
-                                .append(Text.literal("\"" + result.text() + "\"").formatted(Formatting.WHITE)),
-                        true
+                client.player.sendOverlayMessage(
+                        Component.literal("[Voice Sent] ").withStyle(ChatFormatting.GREEN, ChatFormatting.BOLD)
+                                .append(Component.literal("\"" + result.text() + "\"").withStyle(ChatFormatting.WHITE))
                 );
-                if (client.player.networkHandler != null) {
+                if (client.player.connection != null) {
                     String commandText = result.text().replace('\n', ' ').replace('\r', ' ').trim();
-                    client.player.networkHandler.sendChatCommand("vic say " + commandText);
+                    client.player.connection.sendCommand("vic say " + commandText);
                 }
             } else {
-                client.player.sendMessage(
-                        Text.literal("[Vic Voice] ").formatted(Formatting.RED, Formatting.BOLD)
-                                .append(Text.literal(result.errorMessage()).formatted(Formatting.YELLOW)),
-                        false
+                client.player.sendSystemMessage(
+                        Component.literal("[Vic Voice] ").withStyle(ChatFormatting.RED, ChatFormatting.BOLD)
+                                .append(Component.literal(result.errorMessage()).withStyle(ChatFormatting.YELLOW))
                 );
             }
         }));

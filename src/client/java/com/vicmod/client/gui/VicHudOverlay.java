@@ -5,16 +5,17 @@ import com.vicmod.config.VicConfig;
 import com.vicmod.config.VicPersona;
 import com.vicmod.entity.VicEntity;
 import com.vicmod.network.VicHudStatePayload;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.render.RenderTickCounter;
-import net.minecraft.entity.Entity;
-import net.minecraft.util.math.MathHelper;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElement;
+import net.minecraft.client.DeltaTracker;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Entity;
 
 import java.util.List;
 
-public class VicHudOverlay {
+public class VicHudOverlay implements HudElement {
     private static boolean hasReceivedState = false;
     private static boolean countdownActive = false;
     private static int currentDay = 1;
@@ -28,8 +29,8 @@ public class VicHudOverlay {
         countdownActive = payload.countdownActive();
         currentDay = payload.currentDay();
         maxDays = Math.max(1, payload.maxDays());
-        karma = MathHelper.clamp(payload.karma(), -100, 100);
-        stage = MathHelper.clamp(payload.stage(), 0, 5);
+        karma = Mth.clamp(payload.karma(), -100, 100);
+        stage = Mth.clamp(payload.stage(), 0, 5);
         demonAwakened = payload.demonAwakened();
     }
 
@@ -43,9 +44,10 @@ public class VicHudOverlay {
         demonAwakened = false;
     }
 
-    public static void render(DrawContext context, RenderTickCounter tickCounter) {
-        MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player == null || client.options.hudHidden || client.getDebugHud().shouldShowDebugHud()) {
+    @Override
+    public void extractRenderState(GuiGraphicsExtractor context, DeltaTracker deltaTracker) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.player == null || client.gui.hud.isHidden() || client.gui.hud.getDebugOverlay().showDebugScreen()) {
             return;
         }
         if (!VicConfig.get().enableHudOverlay) {
@@ -58,7 +60,7 @@ public class VicHudOverlay {
         int displayStage = hasReceivedState ? stage : 0;
 
         boolean hasPad = VicControllerService.isControllerConnected();
-        TextRenderer font = client.textRenderer;
+        Font font = client.font;
         int boxX = 8;
         int boxY = 8;
         int boxWidth = 148;
@@ -114,9 +116,9 @@ public class VicHudOverlay {
             default -> 0xCC0000;
         };
 
-        context.drawTextWithShadow(font, dayLabel, boxX + 6, boxY + 5, dayColor);
-        int badgeWidth = font.getWidth(faceBadge);
-        context.drawTextWithShadow(font, faceBadge, boxX + boxWidth - 6 - badgeWidth, boxY + 5, badgeColor);
+        context.text(font, dayLabel, boxX + 6, boxY + 5, dayColor, true);
+        int badgeWidth = font.width(faceBadge);
+        context.text(font, faceBadge, boxX + boxWidth - 6 - badgeWidth, boxY + 5, badgeColor, true);
 
         // Row 2: Karma value & Stage text
         String karmaSign = displayKarma > 0 ? "+" : "";
@@ -133,10 +135,10 @@ public class VicHudOverlay {
         }
 
         String stageText = displayStage == 5 ? "CLEARED" : (demonAwakened ? "DEMON" : ("Stage " + displayStage));
-        int stageWidth = font.getWidth(stageText);
+        int stageWidth = font.width(stageText);
 
-        context.drawTextWithShadow(font, karmaText, boxX + 6, boxY + 17, karmaColor);
-        context.drawTextWithShadow(font, stageText, boxX + boxWidth - 6 - stageWidth, boxY + 17, 0xAAAAAA);
+        context.text(font, karmaText, boxX + 6, boxY + 17, karmaColor, true);
+        context.text(font, stageText, boxX + boxWidth - 6 - stageWidth, boxY + 17, 0xAAAAAA, true);
 
         // Row 3: Karma visual bar (-100 to +100)
         int barX = boxX + 6;
@@ -163,7 +165,7 @@ public class VicHudOverlay {
         context.fill(centerBarX, barY, centerBarX + 1, barY + barHeight, 0xFF888888);
 
         // Current Karma cursor pip
-        int pipX = MathHelper.clamp(centerBarX + (displayKarma >= 0 ? fillPixels : -fillPixels), barX, barX + barWidth - 2);
+        int pipX = Mth.clamp(centerBarX + (displayKarma >= 0 ? fillPixels : -fillPixels), barX, barX + barWidth - 2);
         context.fill(pipX, barY - 1, pipX + 2, barY + barHeight + 1, 0xFFFFFFFF);
 
         // Optional Row 4: Connected PS5 / Xbox Controller quick-action prompt
@@ -177,15 +179,15 @@ public class VicHudOverlay {
                 padPrefix += " (" + VicControllerService.getExternalControllerModName() + ")";
             }
             String padHint = padPrefix + ": [D-Up] Mic [D-Dn] Light";
-            context.drawTextWithShadow(font, padHint, boxX + 6, boxY + 40, 0x55FFFF);
+            context.text(font, padHint, boxX + 6, boxY + 40, 0x55FFFF, true);
         }
     }
 
-    private static VicPersona resolveActivePersona(MinecraftClient client) {
-        if (client.world != null && client.player != null) {
-            List<VicEntity> vics = client.world.getEntitiesByClass(
+    private static VicPersona resolveActivePersona(Minecraft client) {
+        if (client.level != null && client.player != null) {
+            List<VicEntity> vics = client.level.getEntitiesOfClass(
                     VicEntity.class,
-                    client.player.getBoundingBox().expand(96.0),
+                    client.player.getBoundingBox().inflate(96.0),
                     Entity::isAlive
             );
             if (!vics.isEmpty()) {

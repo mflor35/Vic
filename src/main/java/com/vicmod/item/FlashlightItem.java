@@ -1,109 +1,107 @@
 package com.vicmod.item;
 
 import com.vicmod.entity.VicDemonEntity;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.component.type.NbtComponent;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.effect.StatusEffectInstance;
-import net.minecraft.entity.effect.StatusEffects;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.tooltip.TooltipType;
-import net.minecraft.nbt.NbtCompound;
-import net.minecraft.particle.ParticleTypes;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.sound.SoundCategory;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
-import net.minecraft.util.Hand;
-import net.minecraft.util.TypedActionResult;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.World;
+import net.minecraft.ChatFormatting;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.TooltipFlag;
+import net.minecraft.world.item.component.CustomData;
+import net.minecraft.world.item.component.TooltipDisplay;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.List;
+import java.util.function.Consumer;
 
 public class FlashlightItem extends Item {
     private static final String ACTIVE_KEY = "FlashlightActive";
 
-    public FlashlightItem(Settings settings) {
-        super(settings);
+    public FlashlightItem(Properties properties) {
+        super(properties);
     }
 
     public static boolean isActive(ItemStack stack) {
-        NbtComponent customData = stack.getOrDefault(DataComponentTypes.CUSTOM_DATA, NbtComponent.DEFAULT);
-        return customData.copyNbt().getBoolean(ACTIVE_KEY);
+        CustomData customData = stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY);
+        return customData.copyTag().getBooleanOr(ACTIVE_KEY, false);
     }
 
     public static void setActive(ItemStack stack, boolean active) {
-        NbtCompound nbt = stack.getOrDefault(DataComponentTypes.CUSTOM_DATA, NbtComponent.DEFAULT).copyNbt();
-        nbt.putBoolean(ACTIVE_KEY, active);
-        stack.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
+        CustomData.update(DataComponents.CUSTOM_DATA, stack, tag -> tag.putBoolean(ACTIVE_KEY, active));
     }
 
     @Override
-    public TypedActionResult<ItemStack> use(World world, PlayerEntity user, Hand hand) {
-        ItemStack stack = user.getStackInHand(hand);
-        if (!world.isClient) {
+    public InteractionResult use(Level level, Player user, InteractionHand hand) {
+        ItemStack stack = user.getItemInHand(hand);
+        if (!level.isClientSide()) {
             boolean nextState = !isActive(stack);
             setActive(stack, nextState);
-            world.playSound(null, user.getBlockPos(), SoundEvents.BLOCK_LEVER_CLICK, SoundCategory.PLAYERS, 0.7f, nextState ? 1.4f : 0.9f);
-            user.sendMessage(
-                    Text.literal("[Flashlight] ").formatted(Formatting.YELLOW)
-                            .append(Text.literal(nextState ? "ON" : "OFF").formatted(nextState ? Formatting.GREEN : Formatting.RED)),
-                    true
+            level.playSound(null, user.blockPosition(), SoundEvents.LEVER_CLICK, SoundSource.PLAYERS, 0.7f, nextState ? 1.4f : 0.9f);
+            user.sendSystemMessage(
+                    Component.literal("[Flashlight] ").withStyle(ChatFormatting.YELLOW)
+                            .append(Component.literal(nextState ? "ON" : "OFF").withStyle(nextState ? ChatFormatting.GREEN : ChatFormatting.RED))
             );
             if (!nextState) {
-                user.removeStatusEffect(StatusEffects.NIGHT_VISION);
+                user.removeEffect(MobEffects.NIGHT_VISION);
             }
         }
-        return TypedActionResult.success(stack, world.isClient());
+        return InteractionResult.SUCCESS;
     }
 
     @Override
-    public void inventoryTick(ItemStack stack, World world, Entity entity, int slot, boolean selected) {
-        if (!world.isClient && world instanceof ServerWorld serverWorld && entity instanceof PlayerEntity player) {
-            boolean holding = selected || player.getOffHandStack() == stack;
+    public void inventoryTick(ItemStack stack, ServerLevel serverLevel, Entity entity, EquipmentSlot slot) {
+        if (entity instanceof Player player) {
+            boolean holding = player.getMainHandItem() == stack || player.getOffhandItem() == stack;
             if (holding && isActive(stack)) {
-                player.removeStatusEffect(StatusEffects.DARKNESS);
-                player.addStatusEffect(new StatusEffectInstance(StatusEffects.NIGHT_VISION, 260, 0, false, false, false));
+                player.removeEffect(MobEffects.DARKNESS);
+                player.addEffect(new MobEffectInstance(MobEffects.NIGHT_VISION, 260, 0, false, false, false));
 
                 // Check if the player's flashlight beam is aimed at The Vic Demon
-                if (serverWorld.getTime() % 5 == 0) {
-                    stunTargetedDemon(serverWorld, player);
+                if (serverLevel.getGameTime() % 5 == 0) {
+                    stunTargetedDemon(serverLevel, player);
                 }
             }
         }
     }
 
-    private void stunTargetedDemon(ServerWorld world, PlayerEntity player) {
-        Vec3d eyePos = player.getEyePos();
-        Vec3d lookVec = player.getRotationVec(1.0f).normalize();
+    private void stunTargetedDemon(ServerLevel level, Player player) {
+        Vec3 eyePos = player.getEyePosition();
+        Vec3 lookVec = player.getViewVector(1.0f).normalize();
 
-        List<VicDemonEntity> demons = world.getEntitiesByClass(
+        List<VicDemonEntity> demons = level.getEntitiesOfClass(
                 VicDemonEntity.class,
-                player.getBoundingBox().expand(22.0),
-                demon -> demon.isAlive() && player.canSee(demon)
+                player.getBoundingBox().inflate(22.0),
+                demon -> demon.isAlive() && player.hasLineOfSight(demon)
         );
 
         for (VicDemonEntity demon : demons) {
-            Vec3d toDemon = demon.getPos().add(0, demon.getHeight() * 0.65, 0).subtract(eyePos);
+            Vec3 toDemon = demon.position().add(0, demon.getBbHeight() * 0.65, 0).subtract(eyePos);
             double dist = toDemon.length();
             if (dist > 0.1 && dist <= 22.0) {
-                double dot = lookVec.dotProduct(toDemon.normalize());
+                double dot = lookVec.dot(toDemon.normalize());
                 if (dot >= 0.84) {
-                    demon.addStatusEffect(new StatusEffectInstance(StatusEffects.SLOWNESS, 50, 3, false, false, true));
-                    demon.addStatusEffect(new StatusEffectInstance(StatusEffects.WEAKNESS, 50, 1, false, false, true));
-                    demon.addStatusEffect(new StatusEffectInstance(StatusEffects.GLOWING, 50, 0, false, false, true));
+                    demon.addEffect(new MobEffectInstance(MobEffects.SLOWNESS, 50, 3, false, false, true));
+                    demon.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 50, 1, false, false, true));
+                    demon.addEffect(new MobEffectInstance(MobEffects.GLOWING, 50, 0, false, false, true));
 
-                    Vec3d push = toDemon.normalize().multiply(0.18);
-                    demon.addVelocity(push.x, 0.05, push.z);
-                    demon.velocityModified = true;
+                    Vec3 push = toDemon.normalize().scale(0.18);
+                    demon.push(push.x, 0.05, push.z);
 
-                    world.spawnParticles(ParticleTypes.END_ROD, demon.getX(), demon.getEyeY(), demon.getZ(), 5, 0.25, 0.25, 0.25, 0.03);
-                    if (world.getTime() % 20 == 0) {
-                        world.playSound(null, demon.getBlockPos(), SoundEvents.BLOCK_FIRE_EXTINGUISH, SoundCategory.HOSTILE, 0.8f, 1.4f);
+                    level.sendParticles(ParticleTypes.END_ROD, demon.getX(), demon.getEyeY(), demon.getZ(), 5, 0.25, 0.25, 0.25, 0.03);
+                    if (level.getGameTime() % 20 == 0) {
+                        level.playSound(null, demon.blockPosition(), SoundEvents.FIRE_EXTINGUISH, SoundSource.HOSTILE, 0.8f, 1.4f);
                     }
                 }
             }
@@ -111,15 +109,10 @@ public class FlashlightItem extends Item {
     }
 
     @Override
-    public boolean hasGlint(ItemStack stack) {
-        return isActive(stack);
-    }
-
-    @Override
-    public void appendTooltip(ItemStack stack, TooltipContext context, List<Text> tooltip, TooltipType type) {
+    public void appendHoverText(ItemStack stack, TooltipContext context, TooltipDisplay display, Consumer<Component> tooltip, TooltipFlag flag) {
         boolean on = isActive(stack);
-        tooltip.add(Text.literal("Status: " + (on ? "ON" : "OFF")).formatted(on ? Formatting.GREEN : Formatting.GRAY));
-        tooltip.add(Text.literal("Right-click to toggle beam & pierce True Darkness").formatted(Formatting.DARK_GRAY));
-        tooltip.add(Text.literal("Aim beam at The Vic Demon to blind and interrupt it.").formatted(Formatting.YELLOW));
+        tooltip.accept(Component.literal("Status: " + (on ? "ON" : "OFF")).withStyle(on ? ChatFormatting.GREEN : ChatFormatting.GRAY));
+        tooltip.accept(Component.literal("Right-click to toggle beam & pierce True Darkness").withStyle(ChatFormatting.DARK_GRAY));
+        tooltip.accept(Component.literal("Aim beam at The Vic Demon to blind and interrupt it.").withStyle(ChatFormatting.YELLOW));
     }
 }

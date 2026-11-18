@@ -1,25 +1,26 @@
 package com.vicmod.client.input;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import com.vicmod.client.gui.VicConfigScreen;
 import com.vicmod.config.VicConfig;
 import com.vicmod.registry.ModItems;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.ingame.InventoryScreen;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.util.InputUtil;
-import net.minecraft.entity.player.PlayerInventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
-import net.minecraft.util.Hand;
-import net.minecraft.util.math.MathHelper;
-import org.lwjgl.glfw.GLFW;
-import org.lwjgl.glfw.GLFWGamepadState;
+import net.minecraft.ChatFormatting;
+import net.minecraft.client.KeyMapping;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.input.MouseButtonInfo;
+import net.minecraft.network.chat.Component;
+import net.minecraft.util.Mth;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.item.ItemStack;
+import org.lwjgl.sdl.SDLGamepad;
+import org.lwjgl.sdl.SDLInit;
+import org.lwjgl.sdl.SDLMouse;
 
-import java.nio.ByteBuffer;
-import java.nio.FloatBuffer;
-import java.util.Locale;
+import java.nio.IntBuffer;
 
 public class VicControllerService {
     public enum ControllerProfile {
@@ -42,12 +43,12 @@ public class VicControllerService {
     private static Boolean externalControllerModLoaded = null;
     private static String externalControllerModName = "";
 
-    private static int activeJoystickId = -1;
+    private static long activeGamepad = 0;
     private static ControllerProfile activeProfile = ControllerProfile.NONE;
     private static String activeControllerName = "";
     private static boolean controllerDrivingMovement = false;
 
-    private static final boolean[] prevButtons = new boolean[15];
+    private static final boolean[] prevButtons = new boolean[32];
     private static boolean prevLeftTriggerPressed = false;
     private static boolean prevRightTriggerPressed = false;
     private static boolean sneakToggled = false;
@@ -85,7 +86,7 @@ public class VicControllerService {
     }
 
     public static boolean isControllerConnected() {
-        return activeJoystickId != -1 && activeProfile != ControllerProfile.NONE;
+        return activeGamepad != 0 && activeProfile != ControllerProfile.NONE;
     }
 
     public static ControllerProfile getActiveProfile() {
@@ -100,20 +101,19 @@ public class VicControllerService {
         return dpadUpVoiceHeld;
     }
 
-    public static void tick(MinecraftClient client) {
+    public static void tick(Minecraft client) {
         if (!VicConfig.get().enableController) {
             if (controllerDrivingMovement) {
                 releaseMovementKeys(client);
                 controllerDrivingMovement = false;
             }
             dpadUpVoiceHeld = false;
-            activeJoystickId = -1;
-            activeProfile = ControllerProfile.NONE;
+            closeActiveGamepad();
             return;
         }
 
         detectController(client);
-        if (activeJoystickId == -1) {
+        if (activeGamepad == 0) {
             if (controllerDrivingMovement) {
                 releaseMovementKeys(client);
                 controllerDrivingMovement = false;
@@ -122,13 +122,24 @@ public class VicControllerService {
             return;
         }
 
-        float[] axes = new float[6];
-        boolean[] buttons = new boolean[15];
-        if (!readControllerState(activeJoystickId, axes, buttons)) {
-            activeJoystickId = -1;
-            activeProfile = ControllerProfile.NONE;
+        SDLGamepad.SDL_UpdateGamepads();
+        if (!SDLGamepad.SDL_GamepadConnected(activeGamepad)) {
+            closeActiveGamepad();
             dpadUpVoiceHeld = false;
             return;
+        }
+
+        float deadzone = Mth.clamp(VicConfig.get().controllerDeadzone, 0.05f, 0.45f);
+        float lx = applyDeadzone(SDLGamepad.SDL_GetGamepadAxis(activeGamepad, SDLGamepad.SDL_GAMEPAD_AXIS_LEFTX) / 32767.0f, deadzone);
+        float ly = applyDeadzone(SDLGamepad.SDL_GetGamepadAxis(activeGamepad, SDLGamepad.SDL_GAMEPAD_AXIS_LEFTY) / 32767.0f, deadzone);
+        float rx = applyDeadzone(SDLGamepad.SDL_GetGamepadAxis(activeGamepad, SDLGamepad.SDL_GAMEPAD_AXIS_RIGHTX) / 32767.0f, deadzone);
+        float ry = applyDeadzone(SDLGamepad.SDL_GetGamepadAxis(activeGamepad, SDLGamepad.SDL_GAMEPAD_AXIS_RIGHTY) / 32767.0f, deadzone);
+        float lt = Math.max(0.0f, SDLGamepad.SDL_GetGamepadAxis(activeGamepad, SDLGamepad.SDL_GAMEPAD_AXIS_LEFT_TRIGGER) / 32767.0f);
+        float rt = Math.max(0.0f, SDLGamepad.SDL_GetGamepadAxis(activeGamepad, SDLGamepad.SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) / 32767.0f);
+
+        boolean[] buttons = new boolean[32];
+        for (int i = 0; i < buttons.length; i++) {
+            buttons[i] = SDLGamepad.SDL_GetGamepadButton(activeGamepad, i);
         }
 
         // If Controlify or MidnightControls is installed, yield core movement/camera/UI to it
@@ -138,13 +149,13 @@ public class VicControllerService {
                 releaseMovementKeys(client);
                 controllerDrivingMovement = false;
             }
-            if (client.currentScreen == null && client.player != null) {
-                dpadUpVoiceHeld = buttons[GLFW.GLFW_GAMEPAD_BUTTON_DPAD_UP];
-                if (justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_DPAD_DOWN)) {
+            if (client.gui.screen() == null && client.player != null) {
+                dpadUpVoiceHeld = buttons[SDLGamepad.SDL_GAMEPAD_BUTTON_DPAD_UP];
+                if (justPressed(buttons, SDLGamepad.SDL_GAMEPAD_BUTTON_DPAD_DOWN)) {
                     quickToggleFlashlight(client);
                 }
-                if (justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_DPAD_RIGHT)) {
-                    client.setScreen(new VicConfigScreen(null));
+                if (justPressed(buttons, SDLGamepad.SDL_GAMEPAD_BUTTON_DPAD_RIGHT)) {
+                    client.gui.setScreen(new VicConfigScreen(null));
                 }
             } else {
                 dpadUpVoiceHeld = false;
@@ -153,16 +164,8 @@ public class VicControllerService {
             return;
         }
 
-        float deadzone = MathHelper.clamp(VicConfig.get().controllerDeadzone, 0.05f, 0.45f);
-        float lx = applyDeadzone(axes[GLFW.GLFW_GAMEPAD_AXIS_LEFT_X], deadzone);
-        float ly = applyDeadzone(axes[GLFW.GLFW_GAMEPAD_AXIS_LEFT_Y], deadzone);
-        float rx = applyDeadzone(axes[GLFW.GLFW_GAMEPAD_AXIS_RIGHT_X], deadzone);
-        float ry = applyDeadzone(axes[GLFW.GLFW_GAMEPAD_AXIS_RIGHT_Y], deadzone);
-        float lt = axes[GLFW.GLFW_GAMEPAD_AXIS_LEFT_TRIGGER];
-        float rt = axes[GLFW.GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER];
-
         // If a GUI Screen is open, allow virtual cursor navigation & A/B actions
-        if (client.currentScreen != null) {
+        if (client.gui.screen() != null) {
             if (controllerDrivingMovement) {
                 releaseMovementKeys(client);
                 controllerDrivingMovement = false;
@@ -173,7 +176,7 @@ public class VicControllerService {
             return;
         }
 
-        if (client.player == null || client.world == null) {
+        if (client.player == null || client.level == null) {
             System.arraycopy(buttons, 0, prevButtons, 0, buttons.length);
             return;
         }
@@ -186,42 +189,42 @@ public class VicControllerService {
         boolean anyMove = moveForward || moveBack || moveLeft || moveRight;
 
         if (anyMove || controllerDrivingMovement) {
-            client.options.forwardKey.setPressed(moveForward);
-            client.options.backKey.setPressed(moveBack);
-            client.options.leftKey.setPressed(moveLeft);
-            client.options.rightKey.setPressed(moveRight);
+            client.options.keyUp.setDown(moveForward);
+            client.options.keyDown.setDown(moveBack);
+            client.options.keyLeft.setDown(moveLeft);
+            client.options.keyRight.setDown(moveRight);
             if (!moveForward) sprintToggled = false;
-            client.options.sprintKey.setPressed(sprintToggled && moveForward);
-            client.options.sneakKey.setPressed(sneakToggled);
-            client.options.jumpKey.setPressed(buttons[GLFW.GLFW_GAMEPAD_BUTTON_A]);
-            controllerDrivingMovement = anyMove || buttons[GLFW.GLFW_GAMEPAD_BUTTON_A] || sneakToggled || sprintToggled;
+            client.options.keySprint.setDown(sprintToggled && moveForward);
+            client.options.keyShift.setDown(sneakToggled);
+            client.options.keyJump.setDown(buttons[SDLGamepad.SDL_GAMEPAD_BUTTON_SOUTH]);
+            controllerDrivingMovement = anyMove || buttons[SDLGamepad.SDL_GAMEPAD_BUTTON_SOUTH] || sneakToggled || sprintToggled;
         }
 
         // 2. Right Stick Camera Look
         if (Math.abs(rx) > 0.001f || Math.abs(ry) > 0.001f) {
-            float sens = MathHelper.clamp(VicConfig.get().controllerSensitivity, 1.0f, 25.0f) * 2.2f;
+            float sens = Mth.clamp(VicConfig.get().controllerSensitivity, 1.0f, 25.0f) * 2.2f;
             float curvedRx = Math.copySign(rx * rx, rx) * sens;
             float curvedRy = Math.copySign(ry * ry, ry) * sens;
-            client.player.changeLookDirection(curvedRx, curvedRy);
+            client.player.turn(curvedRx, curvedRy);
         }
 
         // 3. L3 (Sprint) & R3 (Sneak Toggle)
-        if (justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_LEFT_THUMB)) {
+        if (justPressed(buttons, SDLGamepad.SDL_GAMEPAD_BUTTON_LEFT_STICK)) {
             sprintToggled = !sprintToggled;
         }
-        if (justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_RIGHT_THUMB)) {
+        if (justPressed(buttons, SDLGamepad.SDL_GAMEPAD_BUTTON_RIGHT_STICK)) {
             sneakToggled = !sneakToggled;
-            client.options.sneakKey.setPressed(sneakToggled);
+            client.options.keyShift.setDown(sneakToggled);
         }
 
         // 4. Bumpers (L1/LB & R1/RB): Cycle Hotbar Slots
-        if (justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_LEFT_BUMPER)) {
-            PlayerInventory inv = client.player.getInventory();
-            inv.selectedSlot = (inv.selectedSlot + 8) % 9;
+        if (justPressed(buttons, SDLGamepad.SDL_GAMEPAD_BUTTON_LEFT_SHOULDER)) {
+            Inventory inv = client.player.getInventory();
+            inv.setSelectedSlot((inv.getSelectedSlot() + 8) % 9);
         }
-        if (justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_RIGHT_BUMPER)) {
-            PlayerInventory inv = client.player.getInventory();
-            inv.selectedSlot = (inv.selectedSlot + 1) % 9;
+        if (justPressed(buttons, SDLGamepad.SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER)) {
+            Inventory inv = client.player.getInventory();
+            inv.setSelectedSlot((inv.getSelectedSlot() + 1) % 9);
         }
 
         // 5. Triggers (L2/LT = Use/Interact, R2/RT = Attack/Mine)
@@ -229,125 +232,124 @@ public class VicControllerService {
         boolean rtPressed = rt > 0.35f;
 
         if (ltPressed != prevLeftTriggerPressed) {
-            client.options.useKey.setPressed(ltPressed);
+            client.options.keyUse.setDown(ltPressed);
             if (ltPressed) {
-                triggerKeyClick(client.options.useKey);
+                triggerKeyClick(client.options.keyUse);
             }
             prevLeftTriggerPressed = ltPressed;
         }
         if (rtPressed != prevRightTriggerPressed) {
-            client.options.attackKey.setPressed(rtPressed);
+            client.options.keyAttack.setDown(rtPressed);
             if (rtPressed) {
-                triggerKeyClick(client.options.attackKey);
+                triggerKeyClick(client.options.keyAttack);
             }
             prevRightTriggerPressed = rtPressed;
         }
 
         // 6. Face Buttons:
-        if (justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_Y)) {
-            client.setScreen(new InventoryScreen(client.player));
+        if (justPressed(buttons, SDLGamepad.SDL_GAMEPAD_BUTTON_NORTH)) {
+            client.gui.setScreen(new InventoryScreen(client.player));
         }
-        if (justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_X)) {
+        if (justPressed(buttons, SDLGamepad.SDL_GAMEPAD_BUTTON_WEST)) {
             if (!quickToggleFlashlight(client)) {
-                triggerKeyClick(client.options.swapHandsKey);
+                triggerKeyClick(client.options.keySwapOffhand);
             }
         }
-        if (justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_B)) {
-            client.player.dropSelectedItem(false);
+        if (justPressed(buttons, SDLGamepad.SDL_GAMEPAD_BUTTON_EAST)) {
+            triggerKeyClick(client.options.keyDrop);
         }
 
         // 7. Center Buttons:
-        if (justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_START)) {
-            client.openGameMenu(false);
+        if (justPressed(buttons, SDLGamepad.SDL_GAMEPAD_BUTTON_START)) {
+            client.gui.setPauseScreen(false, false);
         }
-        if (justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_BACK)) {
-            client.setScreen(new VicConfigScreen(null));
+        if (justPressed(buttons, SDLGamepad.SDL_GAMEPAD_BUTTON_BACK)) {
+            client.gui.setScreen(new VicConfigScreen(null));
         }
 
         // 8. D-Pad Vic Mod Actions:
-        dpadUpVoiceHeld = buttons[GLFW.GLFW_GAMEPAD_BUTTON_DPAD_UP];
+        dpadUpVoiceHeld = buttons[SDLGamepad.SDL_GAMEPAD_BUTTON_DPAD_UP];
 
-        if (justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_DPAD_DOWN)) {
+        if (justPressed(buttons, SDLGamepad.SDL_GAMEPAD_BUTTON_DPAD_DOWN)) {
             quickToggleFlashlight(client);
         }
 
-        if (justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_DPAD_RIGHT)) {
-            client.setScreen(new VicConfigScreen(null));
+        if (justPressed(buttons, SDLGamepad.SDL_GAMEPAD_BUTTON_DPAD_RIGHT)) {
+            client.gui.setScreen(new VicConfigScreen(null));
         }
 
-        if (justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_DPAD_LEFT)) {
-            client.options.setPerspective(client.options.getPerspective().next());
+        if (justPressed(buttons, SDLGamepad.SDL_GAMEPAD_BUTTON_DPAD_LEFT)) {
+            client.options.setCameraType(client.options.getCameraType().cycle());
         }
 
         System.arraycopy(buttons, 0, prevButtons, 0, buttons.length);
     }
 
-    private static void handleScreenNavigation(MinecraftClient client, float lx, float ly, boolean[] buttons) {
-        long windowHandle = client.getWindow().getHandle();
+    private static void handleScreenNavigation(Minecraft client, float lx, float ly, boolean[] buttons) {
+        long windowHandle = client.getWindow().handle();
 
         if (Math.abs(lx) > 0.01f || Math.abs(ly) > 0.01f) {
-            double[] cx = new double[1];
-            double[] cy = new double[1];
-            GLFW.glfwGetCursorPos(windowHandle, cx, cy);
+            double cx = client.mouseHandler.xpos();
+            double cy = client.mouseHandler.ypos();
             double speed = 11.0;
-            double newX = MathHelper.clamp(cx[0] + lx * speed, 0, client.getWindow().getWidth());
-            double newY = MathHelper.clamp(cy[0] + ly * speed, 0, client.getWindow().getHeight());
-            GLFW.glfwSetCursorPos(windowHandle, newX, newY);
+            double newX = Mth.clamp(cx + lx * speed, 0, client.getWindow().getWidth());
+            double newY = Mth.clamp(cy + ly * speed, 0, client.getWindow().getHeight());
+            SDLMouse.SDL_WarpMouseInWindow(windowHandle, (float) newX, (float) newY);
         }
 
-        if (justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_A) && client.currentScreen != null) {
-            double mouseX = client.mouse.getX() * client.getWindow().getScaledWidth() / client.getWindow().getWidth();
-            double mouseY = client.mouse.getY() * client.getWindow().getScaledHeight() / client.getWindow().getHeight();
-            client.currentScreen.mouseClicked(mouseX, mouseY, GLFW.GLFW_MOUSE_BUTTON_LEFT);
-            client.currentScreen.mouseReleased(mouseX, mouseY, GLFW.GLFW_MOUSE_BUTTON_LEFT);
+        if (justPressed(buttons, SDLGamepad.SDL_GAMEPAD_BUTTON_SOUTH) && client.gui.screen() != null) {
+            double mouseX = client.mouseHandler.getScaledXPos(client.getWindow());
+            double mouseY = client.mouseHandler.getScaledYPos(client.getWindow());
+            MouseButtonEvent event = new MouseButtonEvent(mouseX, mouseY, new MouseButtonInfo(InputConstants.MOUSE_BUTTON_LEFT, 0));
+            client.gui.screen().mouseClicked(event, false);
+            client.gui.screen().mouseReleased(event);
         }
 
-        if ((justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_B) || justPressed(buttons, GLFW.GLFW_GAMEPAD_BUTTON_START))
-                && client.currentScreen != null) {
-            client.currentScreen.close();
+        if ((justPressed(buttons, SDLGamepad.SDL_GAMEPAD_BUTTON_EAST) || justPressed(buttons, SDLGamepad.SDL_GAMEPAD_BUTTON_START))
+                && client.gui.screen() != null) {
+            client.gui.screen().onClose();
         }
     }
 
-    public static boolean quickToggleFlashlight(MinecraftClient client) {
-        if (client.player == null || client.interactionManager == null) return false;
-        PlayerInventory inv = client.player.getInventory();
+    public static boolean quickToggleFlashlight(Minecraft client) {
+        if (client.player == null || client.gameMode == null) return false;
+        Inventory inv = client.player.getInventory();
 
-        if (client.player.getMainHandStack().isOf(ModItems.FLASHLIGHT)) {
-            client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
+        if (client.player.getMainHandItem().is(ModItems.FLASHLIGHT)) {
+            client.gameMode.useItem(client.player, InteractionHand.MAIN_HAND);
             return true;
         }
-        if (client.player.getOffHandStack().isOf(ModItems.FLASHLIGHT)) {
-            client.interactionManager.interactItem(client.player, Hand.OFF_HAND);
+        if (client.player.getOffhandItem().is(ModItems.FLASHLIGHT)) {
+            client.gameMode.useItem(client.player, InteractionHand.OFF_HAND);
             return true;
         }
 
         for (int i = 0; i < 9; i++) {
-            ItemStack stack = inv.getStack(i);
-            if (stack.isOf(ModItems.FLASHLIGHT)) {
-                inv.selectedSlot = i;
-                client.interactionManager.interactItem(client.player, Hand.MAIN_HAND);
+            ItemStack stack = inv.getItem(i);
+            if (stack.is(ModItems.FLASHLIGHT)) {
+                inv.setSelectedSlot(i);
+                client.gameMode.useItem(client.player, InteractionHand.MAIN_HAND);
                 return true;
             }
         }
         return false;
     }
 
-    private static void triggerKeyClick(KeyBinding keyBinding) {
-        InputUtil.Key boundKey = InputUtil.fromTranslationKey(keyBinding.getBoundKeyTranslationKey());
-        KeyBinding.onKeyPressed(boundKey);
+    private static void triggerKeyClick(KeyMapping keyMapping) {
+        KeyMapping.click(keyMapping.getDefaultKey());
     }
 
-    private static void releaseMovementKeys(MinecraftClient client) {
+    private static void releaseMovementKeys(Minecraft client) {
         if (client == null || client.options == null) return;
-        client.options.forwardKey.setPressed(false);
-        client.options.backKey.setPressed(false);
-        client.options.leftKey.setPressed(false);
-        client.options.rightKey.setPressed(false);
-        client.options.jumpKey.setPressed(false);
-        client.options.sprintKey.setPressed(false);
-        client.options.sneakKey.setPressed(false);
-        client.options.attackKey.setPressed(false);
-        client.options.useKey.setPressed(false);
+        client.options.keyUp.setDown(false);
+        client.options.keyDown.setDown(false);
+        client.options.keyLeft.setDown(false);
+        client.options.keyRight.setDown(false);
+        client.options.keyJump.setDown(false);
+        client.options.keySprint.setDown(false);
+        client.options.keyShift.setDown(false);
+        client.options.keyAttack.setDown(false);
+        client.options.keyUse.setDown(false);
     }
 
     private static boolean justPressed(boolean[] buttons, int index) {
@@ -361,120 +363,61 @@ public class VicControllerService {
         return (value - Math.copySign(deadzone, value)) / (1.0f - deadzone);
     }
 
-    private static void detectController(MinecraftClient client) {
-        if (activeJoystickId != -1 && GLFW.glfwJoystickPresent(activeJoystickId)) {
+    private static void detectController(Minecraft client) {
+        if (activeGamepad != 0 && SDLGamepad.SDL_GamepadConnected(activeGamepad)) {
             return;
         }
 
-        activeJoystickId = -1;
-        activeProfile = ControllerProfile.NONE;
-        activeControllerName = "";
+        closeActiveGamepad();
 
-        for (int jid = GLFW.GLFW_JOYSTICK_1; jid <= GLFW.GLFW_JOYSTICK_16; jid++) {
-            if (!GLFW.glfwJoystickPresent(jid)) continue;
+        SDLInit.SDL_InitSubSystem(SDLInit.SDL_INIT_GAMEPAD);
+        IntBuffer gamepads = SDLGamepad.SDL_GetGamepads();
+        if (gamepads == null || !gamepads.hasRemaining()) {
+            return;
+        }
 
-            String name = GLFW.glfwGetGamepadName(jid);
-            if (name == null || name.isBlank()) {
-                name = GLFW.glfwGetJoystickName(jid);
-            }
-            if (name == null) {
-                name = "Gamepad";
-            }
+        int jid = gamepads.get(0);
+        long gp = SDLGamepad.SDL_OpenGamepad(jid);
+        if (gp == 0) {
+            return;
+        }
 
-            String lower = name.toLowerCase(Locale.ROOT);
-            if (lower.contains("motion sensors") || lower.contains("touchpad")) {
-                continue;
-            }
+        activeGamepad = gp;
+        String name = SDLGamepad.SDL_GetGamepadName(gp);
+        if (name == null || name.isBlank()) {
+            name = "Gamepad";
+        }
+        activeControllerName = name;
 
-            FloatBuffer axes = GLFW.glfwGetJoystickAxes(jid);
-            ByteBuffer btns = GLFW.glfwGetJoystickButtons(jid);
-            if ((axes == null || axes.remaining() < 4) && !GLFW.glfwJoystickIsGamepad(jid)) {
-                continue;
-            }
-            if (btns == null || btns.remaining() < 10) {
-                continue;
-            }
+        int type = SDLGamepad.SDL_GetGamepadType(gp);
+        if (type == SDLGamepad.SDL_GAMEPAD_TYPE_PS5 || type == SDLGamepad.SDL_GAMEPAD_TYPE_PS4 || type == SDLGamepad.SDL_GAMEPAD_TYPE_PS3) {
+            activeProfile = ControllerProfile.PS5;
+        } else if (type == SDLGamepad.SDL_GAMEPAD_TYPE_XBOX360 || type == SDLGamepad.SDL_GAMEPAD_TYPE_XBOXONE) {
+            activeProfile = ControllerProfile.XBOX;
+        } else {
+            activeProfile = ControllerProfile.GENERIC;
+        }
 
-            activeJoystickId = jid;
-            activeControllerName = name;
-            if (lower.contains("dualsense") || lower.contains("ps5") || lower.contains("playstation")
-                    || lower.contains("sony") || lower.contains("dualshock") || lower.contains("wireless controller")) {
-                activeProfile = ControllerProfile.PS5;
-            } else if (lower.contains("xbox") || lower.contains("x-box") || lower.contains("microsoft")) {
-                activeProfile = ControllerProfile.XBOX;
-            } else {
-                activeProfile = ControllerProfile.GENERIC;
-            }
-
-            if (client.player != null) {
-                String modeInfo = isExternalControllerModLoaded()
-                        ? " via " + getExternalControllerModName()
-                        : " (Built-in Mode)";
-                client.player.sendMessage(
-                        Text.literal("[Vic Controller] ").formatted(Formatting.AQUA, Formatting.BOLD)
-                                .append(Text.literal("Connected: " + activeProfile.getDisplayName() + modeInfo).formatted(Formatting.GREEN)),
-                        true
-                );
-            }
-            break;
+        if (client.player != null) {
+            String modeInfo = isExternalControllerModLoaded()
+                    ? " via " + getExternalControllerModName()
+                    : " (Built-in Mode)";
+            client.player.sendOverlayMessage(
+                    Component.literal("[Vic Controller] ").withStyle(ChatFormatting.AQUA, ChatFormatting.BOLD)
+                            .append(Component.literal("Connected: " + activeProfile.getDisplayName() + modeInfo).withStyle(ChatFormatting.GREEN))
+            );
         }
     }
 
-    private static boolean readControllerState(int jid, float[] axesOut, boolean[] buttonsOut) {
-        if (!GLFW.glfwJoystickPresent(jid)) {
-            return false;
-        }
-
-        if (GLFW.glfwJoystickIsGamepad(jid)) {
-            try (GLFWGamepadState state = GLFWGamepadState.malloc()) {
-                if (GLFW.glfwGetGamepadState(jid, state)) {
-                    for (int i = 0; i < 6; i++) {
-                        axesOut[i] = state.axes(i);
-                    }
-                    for (int i = 0; i < 15; i++) {
-                        buttonsOut[i] = state.buttons(i) == GLFW.GLFW_PRESS;
-                    }
-                    return true;
-                }
+    private static void closeActiveGamepad() {
+        if (activeGamepad != 0) {
+            try {
+                SDLGamepad.SDL_CloseGamepad(activeGamepad);
+            } catch (Throwable ignored) {
             }
+            activeGamepad = 0;
         }
-
-        FloatBuffer rawAxes = GLFW.glfwGetJoystickAxes(jid);
-        ByteBuffer rawButtons = GLFW.glfwGetJoystickButtons(jid);
-        if (rawAxes == null || rawButtons == null || rawAxes.remaining() < 4) {
-            return false;
-        }
-
-        boolean isPs = activeProfile == ControllerProfile.PS5;
-        axesOut[GLFW.GLFW_GAMEPAD_AXIS_LEFT_X] = rawAxes.get(0);
-        axesOut[GLFW.GLFW_GAMEPAD_AXIS_LEFT_Y] = rawAxes.get(1);
-
-        if (isPs && rawAxes.remaining() >= 6) {
-            axesOut[GLFW.GLFW_GAMEPAD_AXIS_LEFT_TRIGGER] = rawAxes.get(2);
-            axesOut[GLFW.GLFW_GAMEPAD_AXIS_RIGHT_X] = rawAxes.get(3);
-            axesOut[GLFW.GLFW_GAMEPAD_AXIS_RIGHT_Y] = rawAxes.get(4);
-            axesOut[GLFW.GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER] = rawAxes.get(5);
-        } else {
-            axesOut[GLFW.GLFW_GAMEPAD_AXIS_RIGHT_X] = rawAxes.get(2);
-            axesOut[GLFW.GLFW_GAMEPAD_AXIS_RIGHT_Y] = rawAxes.get(3);
-            axesOut[GLFW.GLFW_GAMEPAD_AXIS_LEFT_TRIGGER] = rawAxes.remaining() > 4 ? rawAxes.get(4) : -1.0f;
-            axesOut[GLFW.GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER] = rawAxes.remaining() > 5 ? rawAxes.get(5) : -1.0f;
-        }
-
-        int btnCount = rawButtons.remaining();
-        for (int i = 0; i < Math.min(btnCount, 15); i++) {
-            buttonsOut[i] = rawButtons.get(i) == GLFW.GLFW_PRESS;
-        }
-
-        ByteBuffer hats = GLFW.glfwGetJoystickHats(jid);
-        if (hats != null && hats.remaining() > 0) {
-            byte hat = hats.get(0);
-            buttonsOut[GLFW.GLFW_GAMEPAD_BUTTON_DPAD_UP] |= (hat & GLFW.GLFW_HAT_UP) != 0;
-            buttonsOut[GLFW.GLFW_GAMEPAD_BUTTON_DPAD_RIGHT] |= (hat & GLFW.GLFW_HAT_RIGHT) != 0;
-            buttonsOut[GLFW.GLFW_GAMEPAD_BUTTON_DPAD_DOWN] |= (hat & GLFW.GLFW_HAT_DOWN) != 0;
-            buttonsOut[GLFW.GLFW_GAMEPAD_BUTTON_DPAD_LEFT] |= (hat & GLFW.GLFW_HAT_LEFT) != 0;
-        }
-
-        return true;
+        activeProfile = ControllerProfile.NONE;
+        activeControllerName = "";
     }
 }

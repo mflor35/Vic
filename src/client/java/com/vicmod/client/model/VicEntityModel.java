@@ -1,49 +1,47 @@
 package com.vicmod.client.model;
 
-import com.vicmod.entity.VicEntity;
-import net.minecraft.client.model.*;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.entity.model.EntityModel;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.util.math.MathHelper;
+import com.vicmod.client.render.VicRenderState;
+import net.minecraft.client.model.EntityModel;
+import net.minecraft.client.model.geom.ModelPart;
+import net.minecraft.client.model.geom.PartPose;
+import net.minecraft.client.model.geom.builders.CubeListBuilder;
+import net.minecraft.client.model.geom.builders.LayerDefinition;
+import net.minecraft.client.model.geom.builders.MeshDefinition;
+import net.minecraft.client.model.geom.builders.PartDefinition;
+import net.minecraft.util.Mth;
 
-public class VicEntityModel extends EntityModel<VicEntity> {
+public class VicEntityModel extends EntityModel<VicRenderState> {
     private final ModelPart sphere;
 
     public VicEntityModel(ModelPart root) {
+        super(root);
         this.sphere = root.getChild("sphere");
     }
 
-    public static TexturedModelData getTexturedModelData() {
-        ModelData modelData = new ModelData();
-        ModelPartData root = modelData.getRoot();
+    public static LayerDefinition getTexturedModelData() {
+        MeshDefinition modelData = new MeshDefinition();
+        PartDefinition root = modelData.getRoot();
 
-        // Rounded 3D sphere composite: core + outer shell caps
-        ModelPartBuilder builder = ModelPartBuilder.create()
-                .uv(0, 0).cuboid(-6.0f, -6.0f, -6.0f, 12.0f, 12.0f, 12.0f)
-                .uv(0, 24).cuboid(-5.0f, -7.0f, -5.0f, 10.0f, 14.0f, 10.0f)
-                .uv(0, 48).cuboid(-7.0f, -5.0f, -5.0f, 14.0f, 10.0f, 10.0f);
+        CubeListBuilder builder = CubeListBuilder.create()
+                .texOffs(0, 0).addBox(-6.0f, -6.0f, -6.0f, 12.0f, 12.0f, 12.0f)
+                .texOffs(0, 24).addBox(-5.0f, -7.0f, -5.0f, 10.0f, 14.0f, 10.0f)
+                .texOffs(0, 48).addBox(-7.0f, -5.0f, -5.0f, 14.0f, 10.0f, 10.0f);
 
-        root.addChild("sphere", builder, ModelTransform.pivot(0.0f, 16.0f, 0.0f));
-        return TexturedModelData.of(modelData, 64, 64);
+        root.addOrReplaceChild("sphere", builder, PartPose.offset(0.0f, 16.0f, 0.0f));
+        return LayerDefinition.create(modelData, 64, 64);
     }
 
     @Override
-    public void setAngles(VicEntity entity, float limbAngle, float limbDistance, float animationProgress, float headYaw, float headPitch) {
-        this.sphere.yaw = headYaw * ((float) Math.PI / 180f);
-        this.sphere.pitch = headPitch * ((float) Math.PI / 180f);
-        this.sphere.pivotY = 16.0f + MathHelper.sin(animationProgress * 0.12f) * 1.5f;
+    public void setupAnim(VicRenderState state) {
+        super.setupAnim(state);
+        this.sphere.yRot = state.yRot * ((float) Math.PI / 180f);
+        this.sphere.xRot = state.xRot * ((float) Math.PI / 180f);
+        this.sphere.y = 16.0f + Mth.sin(state.ageInTicks * 0.12f) * 1.5f;
 
-        if (entity.getCorruptionStage() >= 3) {
-            // Unsettling head twitch in late countdown stage
-            this.sphere.roll = MathHelper.sin(animationProgress * 2.1f) * 0.14f;
+        if (state.corruptionStage >= 3) {
+            this.sphere.zRot = Mth.sin(state.ageInTicks * 2.1f) * 0.14f;
         } else {
-            this.sphere.roll = 0.0f;
+            this.sphere.zRot = 0.0f;
         }
-    }
-
-    @Override
-    public void render(MatrixStack matrices, VertexConsumer vertices, int light, int overlay, int color) {
-        this.sphere.render(matrices, vertices, light, overlay, color);
     }
 }

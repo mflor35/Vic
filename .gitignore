@@ -5,6 +5,7 @@
 
 # Fabric Loom / Minecraft dev run directory
 /run/
+/libs/
 
 # Local config with potential API keys
 /config/

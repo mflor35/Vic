@@ -3,7 +3,7 @@
 These are the shared project instructions for any coding agent working in this repository. Treat the current source code as authoritative when older documentation differs.
 
 ## Project Structure
-- This is a Fabric mod targeting Minecraft 1.21.1 and Java 21. Use the Gradle wrapper.
+- This is a Fabric mod targeting Minecraft 26.x and Java 25. Use the Gradle wrapper.
 - Common and server code belongs in `src/main/java`; client-only code belongs in `src/client/java`. Do not reference client-only APIs from common/server classes.
 - `VicConfig` owns saved configuration, and `VicWorldState` owns persistent world progression.
 

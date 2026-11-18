@@ -1,15 +1,15 @@
-# Vic Mod (Minecraft 1.21.1 Fabric)
+# Vic Mod (Minecraft 26.x Fabric)
 
-A psychological horror & AI companion mod for **Minecraft 1.21.1 (Fabric)** where a mysterious yellow delivery package (`VIC-UNIT-01`) arrives on your first day. Unseal your new friend, chat with him, manage your Karma during the 5-day trial period, and survive when the trial expires.
+A psychological horror & AI companion mod for **Minecraft 26.x (Fabric)** where a mysterious yellow delivery package (`VIC-UNIT-01`) arrives on your first day. Unseal your new friend, chat with him, manage your Karma during the 5-day trial period, and survive when the trial expires.
 
 ---
 
 ## Requirements
 
-- **Minecraft**: `1.21.1`
-- **Mod Loader**: [Fabric Loader](https://fabricmc.net/) (`>= 0.16.0`)
-- **Dependencies**: [Fabric API](https://modrinth.com/mod/fabric-api) (`0.102.0+1.21.1`)
-- **Java**: [**Java 21**](https://adoptium.net/temurin/releases/?version=21)
+- **Minecraft**: `26.x` (target: `26.3`)
+- **Mod Loader**: [Fabric Loader](https://fabricmc.net/) (`>= 0.20.1`)
+- **Dependencies**: [Fabric API](https://modrinth.com/mod/fabric-api) (`0.166.2+26.3`)
+- **Java**: [**Java 25**](https://adoptium.net/temurin/releases/?version=25)
 
 ---
 
@@ -24,13 +24,13 @@ From the project root directory, run:
 ./gradlew runClient
 ```
 
-This launches a development instance of Minecraft 1.21.1 with the mod and Fabric API pre-loaded.
+This launches a development instance of Minecraft 26.x with the mod and Fabric API pre-loaded.
 
 ### Option B: Build the Mod `.jar` for a Standard Launcher
 ```bash
 ./gradlew build
 ```
-Once finished, copy `build/libs/vic-1.0.0.jar` into your Minecraft 1.21.1 Fabric profile's `mods/` folder alongside **Fabric API**.
+Once finished, copy `build/libs/vic-1.0.0.jar` into your Minecraft 26.x Fabric profile's `mods/` folder alongside **Fabric API**.
 
 ---
 
