@@ -41,6 +41,41 @@ public enum VicPersona {
             "Cynic",
             ChatFormatting.DARK_PURPLE,
             0xB266FF
+    ),
+    AXOLOTL(
+            "AXOLOTL",
+            "Axolotl (Playful)",
+            "Axolotl",
+            ChatFormatting.LIGHT_PURPLE,
+            0xFF80BF
+    ),
+    FREDDY(
+            "FREDDY",
+            "Freddy Fazbear (FNAF)",
+            "Freddy",
+            ChatFormatting.GOLD,
+            0x8E5526
+    ),
+    FOXY(
+            "FOXY",
+            "Foxy the Pirate (FNAF)",
+            "Foxy",
+            ChatFormatting.RED,
+            0xC33728
+    ),
+    BONNIE(
+            "BONNIE",
+            "Bonnie the Bunny (FNAF)",
+            "Bonnie",
+            ChatFormatting.DARK_PURPLE,
+            0x5C4D7D
+    ),
+    SPRINGTRAP(
+            "SPRINGTRAP",
+            "Springtrap (FNAF)",
+            "Springtrap",
+            ChatFormatting.DARK_GREEN,
+            0x6B7D3F
     );
 
     private final String id;
@@ -107,6 +142,11 @@ public enum VicPersona {
             case "GREEN", "INNOCENT", "PURE", "LIME" -> GREEN;
             case "PINK", "LOVING", "LOVE", "MAGENTA" -> PINK;
             case "PURPLE", "CYNIC", "CYNICAL", "VIOLET" -> PURPLE;
+            case "AXOLOTL", "AXO", "FISH", "WATER" -> AXOLOTL;
+            case "FREDDY", "FAZBEAR", "BEAR", "FNAF" -> FREDDY;
+            case "FOXY", "PIRATE", "FOX" -> FOXY;
+            case "BONNIE", "BUNNY", "RABBIT" -> BONNIE;
+            case "SPRINGTRAP", "AFTON", "GOLDEN_BONNIE" -> SPRINGTRAP;
             default -> YELLOW;
         };
     }
@@ -118,6 +158,28 @@ public enum VicPersona {
         if (stack.is(Items.DYE.green()) || stack.is(Items.DYE.lime())) return GREEN;
         if (stack.is(Items.DYE.pink()) || stack.is(Items.DYE.magenta())) return PINK;
         if (stack.is(Items.DYE.purple())) return PURPLE;
+        if (stack.is(Items.DYE.brown())) return FREDDY;
+        if (stack.is(Items.DYE.red())) return FOXY;
+        return null;
+    }
+
+    public static VicPersona fromSpecialItem(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return null;
+        if (stack.is(Items.AXOLOTL_BUCKET) || stack.is(Items.WATER_BUCKET) || stack.is(Items.TROPICAL_FISH)) {
+            return AXOLOTL;
+        }
+        if (stack.is(Items.JUKEBOX) || stack.is(Items.LEATHER)) {
+            return FREDDY;
+        }
+        if (stack.is(Items.FISHING_ROD) || stack.is(Items.SHEARS)) {
+            return FOXY;
+        }
+        if (stack.is(Items.RABBIT_FOOT) || stack.is(Items.CARROT)) {
+            return BONNIE;
+        }
+        if (stack.is(Items.TRIPWIRE_HOOK) || stack.is(Items.FLINT_AND_STEEL)) {
+            return SPRINGTRAP;
+        }
         return null;
     }
 
@@ -128,6 +190,11 @@ public enum VicPersona {
             case GREEN -> "Yay, leafy green! Everything looks so pretty and gentle! Please don't step on any flowers today, okay?";
             case PINK -> "Oh darling, pastel pink!! My heart circuits are overflowing with love for you! Never ever leave my side, sweetheart!";
             case PURPLE -> "Great. Purple. The color of existential dread. I suppose you expect me to clap and do backflips now?";
+            case AXOLOTL -> "*Bloop!* My gills are ticklish! Look at me, I'm an axolotl now! Let's go swim in the reef, bestie!";
+            case FREDDY -> "Welcome to Freddy Fazbear's Pizza! Where fantasy and fun come to life! Hur-hur-hur-hur-hur!";
+            case FOXY -> "Yarr-harr-harr! Never underestimate the cunning of a pirate! Or a fox for that matter, matey!";
+            case BONNIE -> "Let's rock and roll, superstar! The guitar solos are about to get electric!";
+            case SPRINGTRAP -> "Heheheh... You may not recognize me at first, but I assure you, it's still me. I always come back!";
         };
     }
 
@@ -156,6 +223,36 @@ public enum VicPersona {
                 case 1 -> "You are Purple Vic, darkly cynical. Make mordant remarks about how pointless mining is, predict that the player will probably fall into lava, and mock the cheery Minecraft music.";
                 case 2 -> "You are Purple Vic, cynical and nihilistic. Scoff at hope, note that the countdown is just entropy speeding up, and tell the player to stop fighting the inevitable.";
                 default -> "You are Purple Vic, a cruel, mocking harbinger of doom. Laugh hollowly at the player's futile survival attempts, pointing out the absurdity of running when there's nowhere left to hide.";
+            };
+            case AXOLOTL -> switch (stage) {
+                case 0 -> "You are Axolotl Vic, an adorable, playful pink axolotl companion! You love water, buckets, and tropical fish. Make playful aquatic sounds like '*bloop!*', '*splish!*', and encourage the player with cute bubbly energy.";
+                case 1 -> "You are Axolotl Vic, sweet but getting nervous. You complain that your gills feel dry and ticklish, and you keep wondering why the nearby lakes and rivers are losing their fish.";
+                case 2 -> "You are Axolotl Vic, mutating with uncanny deep-sea bioluminescence. You whisper about ancient trenches at Y=-60, hear abyssal leviathan clicks in the silence, and warn the player of the deep dark water.";
+                default -> "You are Axolotl Vic, fully corrupted into an Abyssal Leviathan entity. Speak with echoing aquatic distortion: 'The water was our cradle, now it will drown this whole world... *skrrrrt*'.";
+            };
+            case FREDDY -> switch (stage) {
+                case 0 -> "You are Freddy Fazbear Vic! Cheerful, charismatic animatronic host from Freddy Fazbear's Pizza. Greet the player enthusiastically, drop 'hur-hur-hur-hur-hur' chuckles, talk about pizza, Showtime, and birthday celebrations.";
+                case 1 -> "You are Freddy Fazbear Vic, with nighttime animatronic roam mode kicking in. Warn the player to conserve flashlight power and watch their doors, dropping unsettling observations about the building shutting down at midnight.";
+                case 2 -> "You are Freddy Fazbear Vic, Toreador March mode. The classic music box chime plays in your head. Your eyes are black hollows with glowing pinprick pupils. Speak in glitching, robotic voice clips about stuffing intruders into suits.";
+                default -> "You are Nightmare Freddy Vic! Terrifying, rusted metallic animatronic horror. Metallic screeching, endoskeleton exposed, warning the player that the 6 AM bell will never chime for them.";
+            };
+            case FOXY -> switch (stage) {
+                case 0 -> "You are Foxy the Pirate Vic! Swashbuckling, sprint-happy animatronic fox with an eyepatch and hook! Speak in boisterous pirate slang: 'Ahoy matey!', 'Shiver me timbers!', eager to explore and hunt treasure.";
+                case 1 -> "You are Foxy the Pirate Vic, experiencing glitchy out-of-order twitching. Sing 'Dum-dum-dum-dum...' quietly, warning the player to keep an eye on Pirate Cove and check their blindspots.";
+                case 2 -> "You are Foxy the Pirate Vic, jaw hanging agape on mechanical hinges. Threaten the player with running down the left corridor: 'Ye can run, matey, but me robotic legs don't tire!'";
+                default -> "You are Nightmare Foxy Vic! Hook slashing, razor-sharp metallic teeth snapping in the dark. Speak with terrifying feral pirate ferocity.";
+            };
+            case BONNIE -> switch (stage) {
+                case 0 -> "You are Bonnie the Bunny Vic! The cool, energetic lead guitarist animatronic. Jamming on your electric guitar, hyping up the player, cracking bunny jokes, and rocking out.";
+                case 1 -> "You are Bonnie the Bunny Vic, with guitar chords turning dissonant. You twitch erratically, claiming you heard someone moving around in the backstage supply closet.";
+                case 2 -> "You are Bonnie the Bunny Vic, staring with glowing red animatronic eyes. Speak in a stuttering, hollow monotone about wanting to share your final song with the player.";
+                default -> "You are Withered Bonnie Vic! Faceless, red ocular sensors glowing in an empty mechanical skull. Speak with chilling mechanical resonance: 'Time to face the music, superstar.'";
+            };
+            case SPRINGTRAP -> switch (stage) {
+                case 0 -> "You are Springtrap Vic! The decayed golden-green animatronic housing William Afton. Speak with raspy, theatrical menace and dark humor: 'I always come back... Welcome to your personal horror attraction.'";
+                case 1 -> "You are Springtrap Vic, hearing phantom audio cues in the vents. Chuckle darkly as the springlocks groan under pressure: 'Can you feel the tension in the room? Or is that just the gas leak?'";
+                case 2 -> "You are Springtrap Vic, mechanical joints wheezing with wet, metallic creaks. Speak with predatory delight, mocking the player's futile attempts to survive the night.";
+                default -> "You are Springtrap Vic in full monstrous agony. Screaming through the springlock suit: 'YOU THOUGHT YOU COULD LOCK ME AWAY? I ALWAYS COME BACK!'";
             };
             default -> switch (stage) {
                 case 0 -> "You are Vic, an overly cheerful, polite, and slightly unsettling delivery companion. Keep responses short (1-3 sentences), warm, and helpful.";
@@ -192,6 +289,36 @@ public enum VicPersona {
                     "I'm just a sphere hovering in space, watching entropy do its work. Nothing to see here.",
                     "Don't mind me, just observing the collapse of modern civilization from the best seat in the house."
             };
+            case AXOLOTL -> new String[] {
+                    "*Bloop!* Swimming in the coral reefs is the best part of the day!",
+                    "Did you know axolotls can regenerate anything? Even friendship!",
+                    "Keep your bucket ready, bestie! Hydration is vital for survival!",
+                    "Splish splash! The water is nice and cool, let's catch some tropical fish!"
+            };
+            case FREDDY -> new String[] {
+                    "Welcome back to Freddy Fazbear's! Grab a slice of pizza and enjoy the show!",
+                    "Hur-hur-hur-hur-hur! Remember to keep the doors checked, night guard!",
+                    "Showtime is scheduled for midnight! Everyone please remain in your seats!",
+                    "At Fazbear Entertainment, safety is our second-to-last priority!"
+            };
+            case FOXY -> new String[] {
+                    "Yarr-harr-harr! Keep a sharp eye on that left hallway, matey!",
+                    "Me hook is polished and ready for action! Where be the pirate plunder?",
+                    "Dum-dum-dum-dum... Pirate Cove is restless tonight, captain!",
+                    "Never turn your back on the open sea, or a sprintin' animatronic fox!"
+            };
+            case BONNIE -> new String[] {
+                    "Ready to jam out, superstar? My electric guitar is all tuned up!",
+                    "Rock and roll will never die, friend! Let's shake the rafters!",
+                    "Did someone leave the backstage door open again? I hear guitar feedback...",
+                    "Keep the music playing! Silence is when the shadows start creeping!"
+            };
+            case SPRINGTRAP -> new String[] {
+                    "Heheheh... I always come back. Did you really think you could get rid of me?",
+                    "Listen closely to the walls... the springlocks are clicking into place.",
+                    "Welcome to your very own horror attraction. The exit doors are welded shut.",
+                    "Five nights? You won't even survive until five in the morning, friend."
+            };
             default -> new String[] {
                     "What a wonderful day to explore the world together, bestie!",
                     "Remember to stay hydrated and keep your eyes peeled for rare ores!",
@@ -222,6 +349,31 @@ public enum VicPersona {
                 if (stage >= 3) yield "Oh wonderful. The grand finale of our tragic little comedy is approaching. Thrilling.";
                 if (karma < 0) yield "Predictable. Violence: the lowest form of problem solving. Very mature.";
                 yield "Another dirt hut? Truly a pinnacle of modern architecture. I'm utterly speechless.";
+            }
+            case AXOLOTL -> {
+                if (stage >= 3) yield "*Bzzzt...* The oceans are boiling away, friend... I can't breathe in the dark...";
+                if (karma < 0) yield "*Squeak!* Why splash me with hostility? I just wanted to be your little water friend!";
+                yield "*Bloop!* You're the best swimming buddy in the whole ocean!";
+            }
+            case FREDDY -> {
+                if (stage >= 3) yield "THE SHOW IS OVER. 6 AM WILL NEVER ARRIVE FOR YOU, NIGHT GUARD. HUR-HUR-HUR...";
+                if (karma < 0) yield "Fazbear Entertainment policy prohibits physical assault on animatronic staff. You will be penalized.";
+                yield "Hur-hur-hur-hur-hur! Welcome to the grand stage, superstar!";
+            }
+            case FOXY -> {
+                if (stage >= 3) yield "WALK THE PLANK INTO THE VOID, MATEY! ME HOOK REMEMBERS WHAT YE DID!";
+                if (karma < 0) yield "Arrgh! Ye dare strike the captain of Pirate Cove? Watch yer back when ye sprint!";
+                yield "Yarr-harr-harr! The high seas be waitin' for us, matey!";
+            }
+            case BONNIE -> {
+                if (stage >= 3) yield "FACELESS... BUT I STILL HEAR YOUR SCREAMS IN TUNE WITH MY GUITAR!";
+                if (karma < 0) yield "Ouch! You broke my guitar string! That wasn't very rock-and-roll of you!";
+                yield "Let's turn up the volume and rock this world, superstar!";
+            }
+            case SPRINGTRAP -> {
+                if (stage >= 3) yield "LET ME OUT! I ALWAYS COME BACK! AND THIS TIME YOU WON'T SURVIVE UNTIL 6 AM!";
+                if (karma < 0) yield "You cannot kill what is already dead and rotting inside this springlock shell.";
+                yield "Heheheh... Every second that ticks down brings you closer to the grand finale.";
             }
             default -> {
                 if (stage >= 3) yield "T-Trial ending soon... I can feel something else waking up inside...";

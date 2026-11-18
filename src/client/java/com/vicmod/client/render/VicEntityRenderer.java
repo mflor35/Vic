@@ -21,6 +21,11 @@ public class VicEntityRenderer extends MobRenderer<VicEntity, VicRenderState, Vi
         PERSONA_STAGE_TEXTURES.put(VicPersona.GREEN, buildStageTextures("green_"));
         PERSONA_STAGE_TEXTURES.put(VicPersona.PINK, buildStageTextures("pink_"));
         PERSONA_STAGE_TEXTURES.put(VicPersona.PURPLE, buildStageTextures("purple_"));
+        PERSONA_STAGE_TEXTURES.put(VicPersona.AXOLOTL, buildStageTextures("axolotl_"));
+        PERSONA_STAGE_TEXTURES.put(VicPersona.FREDDY, buildStageTextures("freddy_"));
+        PERSONA_STAGE_TEXTURES.put(VicPersona.FOXY, buildStageTextures("foxy_"));
+        PERSONA_STAGE_TEXTURES.put(VicPersona.BONNIE, buildStageTextures("bonnie_"));
+        PERSONA_STAGE_TEXTURES.put(VicPersona.SPRINGTRAP, buildStageTextures("springtrap_"));
     }
 
     private static Identifier[] buildStageTextures(String prefix) {

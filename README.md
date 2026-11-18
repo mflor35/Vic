@@ -118,12 +118,17 @@ Create a new Singleplayer world with **Allow Commands (Cheats) ON**:
 
 ### 2. Talking to Vic, Rolling Memory & Item Offerings
 - Send a message in standard game chat or run `/vic say <message>` while near Vic.
-- **Colors & Personalities**: Change Vic's color and personality at any time via the **`V` Config Menu (`Persona` button)**, `/vic color <yellow|blue|green|pink|purple>`, or by **right-clicking Vic with a Dye**:
+- **Colors & Personalities**: Change Vic's color, appearance, and personality at any time via the **`V` Config Menu (`Persona` button)**, `/vic color <yellow|blue|green|pink|purple|axolotl|freddy|foxy|bonnie|springtrap>`, or by **right-clicking Vic with dyes or theme items**:
   - **Yellow (`YELLOW` — Cheerful)**: Classic overly enthusiastic best friend whose corporate smile slowly cracks.
   - **Blue (`BLUE` — Compulsive Liar)**: Shameless liar and gaslighter who invents hilarious, blatantly false "facts" about Minecraft.
   - **Green (`GREEN` — Innocent & Pure)**: Childlike, gentle, and wholesome; apologizes to blocks and begs you to hide when his shell starts cracking.
   - **Pink (`PINK` — Very Loving)**: Overwhelmingly affectionate, clingy, and devoted (escalating into an obsessive yandere in later stages).
   - **Purple (`PURPLE` — Cynic)**: Deadpan, sarcastic, and world-weary; roasts your survival skills while begrudgingly helping you.
+  - **Axolotl (`AXOLOTL` — Playful)**: Cute pink amphibious friend with animated flapping gills that squeaks and bloops *(Right-click with a Water Bucket, Tropical Fish, or Axolotl Bucket)*.
+  - **Freddy Fazbear (`FREDDY` — FNAF)**: The animatronic frontman with a 3D top hat and bear ears, "hur-hur-hur-hur" laughs, pizza, and nighttime security guard lore *(Right-click with a Jukebox or Leather, or Brown Dye)*.
+  - **Foxy the Pirate (`FOXY` — FNAF)**: Pirate fox with 3D fox ears, snout, eyepatch, hook, and sprint dashes *(Right-click with a Fishing Rod, Shears, or Red Dye)*.
+  - **Bonnie the Bunny (`BONNIE` — FNAF)**: Lead guitarist purple rabbit with 3D bunny ears that twitch when corrupted *(Right-click with a Rabbit Foot, Carrot, or Purple Dye)*.
+  - **Springtrap (`SPRINGTRAP` — FNAF)**: Decayed golden-olive green rabbit with mechanical wheezing and "I always come back" *(Right-click with a Tripwire Hook, Flint and Steel, or Green Dye)*.
 - **Rolling Conversation Memory**: Vic remembers up to 24 conversation turns (persisted in world NBT) across both LLM (`Ollama` / `OpenAI`) and scripted modes.
 - **Personality Profiles & Emotional Spectrum**: Configure personality via `/vic profile <classic|stoic|melancholy|aggressive|analytical>` or the `V` menu. Vic's emotional state (`CURIOUS`, `BALANCED`, `ANXIOUS`, `HOSTILE`, `DEMONIC`) reflects his karma and trial day, showing dynamic visual/aural cues and an in-game HUD badge.
 - **Complex Survival Tasks**: Assign multi-step tasks such as shelter construction, iron mining, or food gathering via `/vic task start <shelter|iron|food>` or in natural chat.

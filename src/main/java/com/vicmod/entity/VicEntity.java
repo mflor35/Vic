@@ -402,6 +402,25 @@ public class VicEntity extends PathfinderMob {
             return true;
         }
 
+        VicPersona specialPersona = VicPersona.fromSpecialItem(stack);
+        if (specialPersona != null) {
+            consumeOffering(player, stack);
+            setPersona(specialPersona);
+            VicConfig.get().setPersona(specialPersona.getId());
+            VicConfig.save();
+            if (specialPersona == VicPersona.AXOLOTL) {
+                world.sendParticles(ParticleTypes.SPLASH, this.getX(), this.getY() + 0.5, this.getZ(), 24, 0.4, 0.4, 0.4, 0.1);
+                world.sendParticles(ParticleTypes.BUBBLE, this.getX(), this.getY() + 0.5, this.getZ(), 16, 0.3, 0.3, 0.3, 0.05);
+                world.playSound(null, this.blockPosition(), SoundEvents.AXOLOTL_SPLASH, SoundSource.NEUTRAL, 1.0f, 1.2f);
+            } else {
+                world.sendParticles(ParticleTypes.SMOKE, this.getX(), this.getY() + 0.5, this.getZ(), 20, 0.4, 0.4, 0.4, 0.08);
+                world.playSound(null, this.blockPosition(), SoundEvents.IRON_GOLEM_ATTACK, SoundSource.NEUTRAL, 0.9f, 1.1f);
+                world.playSound(null, this.blockPosition(), SoundEvents.NOTE_BLOCK_BIT.value(), SoundSource.NEUTRAL, 1.0f, 0.8f);
+            }
+            VicAiService.deliverDirectLine(player, this, stage, specialPersona.getDyeReactionLine());
+            return true;
+        }
+
         // Truce / Stabilization Mechanic: high-karma stabilization action
         if (stack.is(com.vicmod.registry.ModItems.VIC_CORE) || stack.is(Items.NETHERITE_INGOT) || (state.getKarma() >= 40 && stack.is(Items.GOLDEN_APPLE))) {
             consumeOffering(player, stack);
