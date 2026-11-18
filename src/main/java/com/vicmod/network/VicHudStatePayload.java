@@ -19,7 +19,10 @@ public record VicHudStatePayload(
         int maxDays,
         int karma,
         int stage,
-        boolean demonAwakened
+        boolean demonAwakened,
+        String mood,
+        boolean stabilized,
+        String activeTaskTitle
 ) implements CustomPacketPayload {
     public static final CustomPacketPayload.Type<VicHudStatePayload> TYPE = new CustomPacketPayload.Type<>(
             Identifier.fromNamespaceAndPath(VicMod.MOD_ID, "hud_state")
@@ -32,6 +35,9 @@ public record VicHudStatePayload(
             ByteBufCodecs.VAR_INT, VicHudStatePayload::karma,
             ByteBufCodecs.VAR_INT, VicHudStatePayload::stage,
             ByteBufCodecs.BOOL, VicHudStatePayload::demonAwakened,
+            ByteBufCodecs.STRING_UTF8, VicHudStatePayload::mood,
+            ByteBufCodecs.BOOL, VicHudStatePayload::stabilized,
+            ByteBufCodecs.STRING_UTF8, VicHudStatePayload::activeTaskTitle,
             VicHudStatePayload::new
     );
 
@@ -47,13 +53,20 @@ public record VicHudStatePayload(
     public static VicHudStatePayload fromState(VicWorldState state) {
         int maxDays = Math.max(1, VicConfig.get().countdownDays);
         int stage = state.isDemonDefeated() ? 5 : state.getCorruptionStage();
+        String mood = state.getMood().getId();
+        boolean stabilized = state.isStabilized();
+        String taskTitle = state.getActiveTask() != null ? state.getActiveTask().formatStatus() : "";
+
         return new VicHudStatePayload(
                 state.isCountdownActive(),
                 state.getCurrentDay(),
                 maxDays,
                 state.getKarma(),
                 stage,
-                state.isDemonAwakened()
+                state.isDemonAwakened(),
+                mood,
+                stabilized,
+                taskTitle
         );
     }
 

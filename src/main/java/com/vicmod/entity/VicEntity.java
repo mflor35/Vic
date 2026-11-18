@@ -47,6 +47,7 @@ import java.util.UUID;
 public class VicEntity extends PathfinderMob {
     private static final EntityDataAccessor<Integer> CORRUPTION_STAGE = SynchedEntityData.defineId(VicEntity.class, EntityDataSerializers.INT);
     private static final EntityDataAccessor<String> PERSONA_COLOR = SynchedEntityData.defineId(VicEntity.class, EntityDataSerializers.STRING);
+    private static final EntityDataAccessor<String> MOOD_STATE = SynchedEntityData.defineId(VicEntity.class, EntityDataSerializers.STRING);
 
     private UUID ownerUuid = null;
     private long lastAssistanceTick = -1000L;
@@ -81,6 +82,7 @@ public class VicEntity extends PathfinderMob {
         super.defineSynchedData(builder);
         builder.define(CORRUPTION_STAGE, 0);
         builder.define(PERSONA_COLOR, VicConfig.get().getEffectivePersona().getId());
+        builder.define(MOOD_STATE, "BALANCED");
     }
 
     @Override
@@ -103,6 +105,10 @@ public class VicEntity extends PathfinderMob {
 
     public void setPersona(VicPersona persona) {
         this.entityData.set(PERSONA_COLOR, (persona != null ? persona : VicPersona.YELLOW).getId());
+    }
+
+    public String getMoodState() {
+        return this.entityData.get(MOOD_STATE);
     }
 
     public void setOwnerUuid(UUID uuid) {
@@ -188,6 +194,27 @@ public class VicEntity extends PathfinderMob {
                 }
             }
 
+            if (this.tickCount % 20 == 0) {
+                this.entityData.set(MOOD_STATE, state.getMood().getId());
+            }
+
+            // Resource Dependency: monitor player nutrition and shelter
+            if (this.tickCount % 100 == 0 && targetPlayer instanceof ServerPlayer serverPlayer) {
+                if (!serverPlayer.isCreative() && !serverPlayer.isSpectator()) {
+                    boolean starving = serverPlayer.getFoodData().getFoodLevel() <= 6;
+                    boolean injured = serverPlayer.getHealth() <= 8.0f;
+                    long timeOfDay = serverLevel.getOverworldClockTime() % 24000L;
+                    boolean isNightOrStorm = (timeOfDay >= 13000L && timeOfDay <= 23000L) || serverLevel.isRaining();
+                    boolean skyExposed = serverLevel.canSeeSky(serverPlayer.blockPosition());
+
+                    if (starving || injured || (isNightOrStorm && skyExposed)) {
+                        state.addAgitation(2);
+                    } else if (serverPlayer.getFoodData().getFoodLevel() >= 18 && !skyExposed) {
+                        state.reduceAgitation(1);
+                    }
+                }
+            }
+
             if (this.tickCount % 40 == 0) {
                 int stage = state.computeStage(VicConfig.get().countdownDays);
                 if (stage != getCorruptionStage()) {
@@ -199,7 +226,40 @@ public class VicEntity extends PathfinderMob {
             }
         } else if (this.level().isClientSide()) {
             int stage = getCorruptionStage();
-            if (stage >= 2 && this.random.nextInt(stage == 2 ? 12 : 4) == 0) {
+            String mood = getMoodState();
+
+            // Mood Ring: High Karma/Curious = soft sparkles; Low Karma/Hostile = dark static/smoke; Anxious = sparks
+            if ("CURIOUS".equals(mood)) {
+                if (this.random.nextInt(8) == 0) {
+                    this.level().addParticle(
+                            ParticleTypes.HAPPY_VILLAGER,
+                            this.getX() + (this.random.nextDouble() - 0.5) * 0.7,
+                            this.getY() + 0.3 + this.random.nextDouble() * 0.5,
+                            this.getZ() + (this.random.nextDouble() - 0.5) * 0.7,
+                            0.0, 0.02, 0.0
+                    );
+                }
+            } else if ("HOSTILE".equals(mood) || "DEMONIC".equals(mood)) {
+                if (this.random.nextInt(4) == 0) {
+                    this.level().addParticle(
+                            ParticleTypes.SMOKE,
+                            this.getX() + (this.random.nextDouble() - 0.5) * 0.8,
+                            this.getY() + this.random.nextDouble() * 0.8,
+                            this.getZ() + (this.random.nextDouble() - 0.5) * 0.8,
+                            0.0, 0.02, 0.0
+                    );
+                }
+            } else if ("ANXIOUS".equals(mood)) {
+                if (this.random.nextInt(10) == 0) {
+                    this.level().addParticle(
+                            ParticleTypes.ELECTRIC_SPARK,
+                            this.getX() + (this.random.nextDouble() - 0.5) * 0.6,
+                            this.getY() + this.random.nextDouble() * 0.6,
+                            this.getZ() + (this.random.nextDouble() - 0.5) * 0.6,
+                            0.0, 0.01, 0.0
+                    );
+                }
+            } else if (stage >= 2 && this.random.nextInt(stage == 2 ? 12 : 4) == 0) {
                 this.level().addParticle(
                         ParticleTypes.SMOKE,
                         this.getX() + (this.random.nextDouble() - 0.5) * 0.8,
@@ -342,6 +402,19 @@ public class VicEntity extends PathfinderMob {
             return true;
         }
 
+        // Truce / Stabilization Mechanic: high-karma stabilization action
+        if (stack.is(com.vicmod.registry.ModItems.VIC_CORE) || stack.is(Items.NETHERITE_INGOT) || (state.getKarma() >= 40 && stack.is(Items.GOLDEN_APPLE))) {
+            consumeOffering(player, stack);
+            state.stabilize(24000L); // 1 full in-game day paused
+            syncStageAndHud(world, state);
+            world.sendParticles(ParticleTypes.TOTEM_OF_UNDYING, this.getX(), this.getY() + 0.6, this.getZ(), 35, 0.5, 0.5, 0.5, 0.12);
+            world.playSound(null, this.blockPosition(), SoundEvents.TOTEM_USE, SoundSource.NEUTRAL, 0.9f, 1.1f);
+            world.playSound(null, this.blockPosition(), SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.NEUTRAL, 1.2f, 1.5f);
+            VicAiService.deliverDirectLine(player, this, stage,
+                    "TRUCE INITIATED. Neural feedback stabilized! The countdown clock has paused for today. Thank you, friend.");
+            return true;
+        }
+
         if (stack.is(Items.ENCHANTED_GOLDEN_APPLE) || stack.is(Items.NETHER_STAR)) {
             consumeOffering(player, stack);
             state.addKarma(20);
@@ -393,6 +466,7 @@ public class VicEntity extends PathfinderMob {
                 || stack.is(Items.DANDELION) || stack.is(Items.POPPY)) {
             consumeOffering(player, stack);
             state.addKarma(5);
+            state.reduceAgitation(25);
             syncStageAndHud(world, state);
             world.sendParticles(ParticleTypes.HEART, this.getX(), this.getY() + 0.8, this.getZ(), 4, 0.3, 0.3, 0.3, 0.04);
             world.playSound(null, this.blockPosition(), SoundEvents.GENERIC_EAT.value(), SoundSource.NEUTRAL, 0.9f, 1.25f);

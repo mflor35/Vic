@@ -40,6 +40,7 @@ public class VicModClient implements ClientModInitializer {
     public static final ModelLayerLocation VIC_BOX_LAYER = new ModelLayerLocation(Identifier.fromNamespaceAndPath(VicMod.MOD_ID, "vic_box"), "main");
     public static final ModelLayerLocation VIC_LAYER = new ModelLayerLocation(Identifier.fromNamespaceAndPath(VicMod.MOD_ID, "vic"), "main");
     public static final ModelLayerLocation VIC_DEMON_LAYER = new ModelLayerLocation(Identifier.fromNamespaceAndPath(VicMod.MOD_ID, "vic_demon"), "main");
+    public static final ModelLayerLocation SHADOW_WISP_LAYER = new ModelLayerLocation(Identifier.fromNamespaceAndPath(VicMod.MOD_ID, "shadow_wisp"), "main");
 
     private static KeyMapping openConfigKey;
     private static KeyMapping voicePttKey;
@@ -51,10 +52,12 @@ public class VicModClient implements ClientModInitializer {
         ModelLayerRegistry.registerModelLayer(VIC_BOX_LAYER, VicBoxEntityModel::getTexturedModelData);
         ModelLayerRegistry.registerModelLayer(VIC_LAYER, VicEntityModel::getTexturedModelData);
         ModelLayerRegistry.registerModelLayer(VIC_DEMON_LAYER, VicDemonEntityModel::getTexturedModelData);
+        ModelLayerRegistry.registerModelLayer(SHADOW_WISP_LAYER, com.vicmod.client.model.ShadowWispModel::getTexturedModelData);
 
         EntityRendererRegistry.register(ModEntities.VIC_BOX, VicBoxEntityRenderer::new);
         EntityRendererRegistry.register(ModEntities.VIC, VicEntityRenderer::new);
         EntityRendererRegistry.register(ModEntities.VIC_DEMON, VicDemonEntityRenderer::new);
+        EntityRendererRegistry.register(ModEntities.SHADOW_WISP, com.vicmod.client.render.ShadowWispRenderer::new);
 
         openConfigKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.vic.open_config",

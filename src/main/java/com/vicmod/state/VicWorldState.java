@@ -29,7 +29,7 @@ import java.util.Set;
 import java.util.UUID;
 
 public class VicWorldState extends SavedData {
-    public static final int MAX_MEMORY_TURNS = 8;
+    public static final int MAX_MEMORY_TURNS = 24;
 
     public record ConversationTurn(String playerName, String playerMessage, String vicResponse, int day) {
     }
@@ -44,6 +44,10 @@ public class VicWorldState extends SavedData {
     private UUID activeVicUuid = null;
     private final Set<UUID> welcomedPlayers = new HashSet<>();
     private final Deque<ConversationTurn> conversationMemory = new ArrayDeque<>();
+
+    private VicTask activeTask = null;
+    private long stabilizedTicksRemaining = 0L;
+    private int agitationLevel = 0;
 
     public static final Codec<VicWorldState> CODEC = CompoundTag.CODEC.xmap(
             VicWorldState::loadFromNbt,
@@ -71,6 +75,14 @@ public class VicWorldState extends SavedData {
         state.demonAwakened = tag.getBooleanOr("demonAwakened", false);
         state.demonDefeated = tag.getBooleanOr("demonDefeated", false);
         state.initialDeliverySpawned = tag.getBooleanOr("initialDeliverySpawned", false);
+        state.stabilizedTicksRemaining = tag.getLongOr("stabilizedTicksRemaining", 0L);
+        state.agitationLevel = tag.getIntOr("agitationLevel", 0);
+
+        if (tag.contains("activeTask")) {
+            tag.getCompound("activeTask").ifPresent(taskTag -> {
+                state.activeTask = VicTask.fromNbt(taskTag);
+            });
+        }
 
         String uuidStr = tag.getStringOr("activeVicUuid", "");
         if (!uuidStr.isEmpty()) {
@@ -114,6 +126,12 @@ public class VicWorldState extends SavedData {
         tag.putBoolean("demonAwakened", this.demonAwakened);
         tag.putBoolean("demonDefeated", this.demonDefeated);
         tag.putBoolean("initialDeliverySpawned", this.initialDeliverySpawned);
+        tag.putLong("stabilizedTicksRemaining", this.stabilizedTicksRemaining);
+        tag.putInt("agitationLevel", this.agitationLevel);
+
+        if (this.activeTask != null) {
+            tag.put("activeTask", this.activeTask.toNbt());
+        }
 
         if (this.activeVicUuid != null) {
             tag.putString("activeVicUuid", this.activeVicUuid.toString());
@@ -392,5 +410,66 @@ public class VicWorldState extends SavedData {
             case 4 -> 3;
             default -> 4;
         };
+    }
+
+    public VicTask getActiveTask() {
+        return activeTask;
+    }
+
+    public void setActiveTask(VicTask task) {
+        this.activeTask = task;
+        setDirty();
+    }
+
+    public void clearActiveTask() {
+        this.activeTask = null;
+        setDirty();
+    }
+
+    public boolean isStabilized() {
+        return this.stabilizedTicksRemaining > 0L;
+    }
+
+    public long getStabilizedTicksRemaining() {
+        return stabilizedTicksRemaining;
+    }
+
+    public void stabilize(long ticks) {
+        this.stabilizedTicksRemaining = Math.max(this.stabilizedTicksRemaining, ticks);
+        this.agitationLevel = Math.max(0, this.agitationLevel - 40);
+        this.karma = Math.min(100, this.karma + 15);
+        setDirty();
+    }
+
+    public void tickStabilization(long elapsedTicks) {
+        if (this.stabilizedTicksRemaining > 0L) {
+            this.stabilizedTicksRemaining = Math.max(0L, this.stabilizedTicksRemaining - elapsedTicks);
+            setDirty();
+        }
+    }
+
+    public int getAgitationLevel() {
+        return agitationLevel;
+    }
+
+    public void addAgitation(int delta) {
+        this.agitationLevel = Math.max(0, Math.min(100, this.agitationLevel + delta));
+        setDirty();
+    }
+
+    public void reduceAgitation(int delta) {
+        this.agitationLevel = Math.max(0, Math.min(100, this.agitationLevel - delta));
+        setDirty();
+    }
+
+    public void setAgitationLevel(int agitationLevel) {
+        this.agitationLevel = Math.max(0, Math.min(100, agitationLevel));
+        setDirty();
+    }
+
+    public com.vicmod.config.VicMood getMood() {
+        int effectiveKarma = this.karma - (this.agitationLevel / 3);
+        int stage = computeStage(com.vicmod.config.VicConfig.get().countdownDays);
+        return com.vicmod.config.VicMood.compute(effectiveKarma, stage, this.demonAwakened);
     }
 }

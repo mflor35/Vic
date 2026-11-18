@@ -433,26 +433,44 @@ public class VicAiService {
         long dayTime = player.level().getOverworldClockTime() % 24000L;
         boolean isNight = dayTime >= 13000L && dayTime <= 23000L;
         VicPersona persona = vic != null ? vic.getPersona() : VicConfig.get().getEffectivePersona();
-
+        com.vicmod.config.VicPersonalityProfile profile = VicConfig.get().getEffectivePersonalityProfile();
+        com.vicmod.state.VicTask activeTask = state.getActiveTask();
+        com.vicmod.config.VicMood mood = state.getMood();
         String stagePersona = persona.getSystemPromptInstructions(stage);
 
-        return "You are Vic (" + persona.getDisplayName() + "), a floating spherical virtual companion inside Minecraft (inspired by the Verity ARG). " +
-                "Keep your response concise (1 to 2 sentences max). " +
-                "Current Day: " + state.getCurrentDay() + " of " + maxDays + ". " +
-                "Player Karma with you: " + state.getKarma() + " (range -100 to 100). " +
-                "Player Status: Health=" + health + "/20, Hunger=" + food + "/20, Pos=(" + pos.getX() + "," + pos.getY() + "," + pos.getZ() + "), Night=" + isNight + ". " +
-                "Persona & Color instructions (MUST FOLLOW STRICTLY): " + stagePersona + "\n" +
-                "Available Action Tags (include at most ONE tag at the very end of your reply if appropriate):\n" +
-                "- [ACTION:GIVE_GOLDEN_APPLE] if the player asks for healing or a golden apple.\n" +
-                "- [ACTION:GIVE_FOOD] if the player asks for food or is hungry.\n" +
-                "- [ACTION:GIVE_TORCH] if the player asks for light or torches.\n" +
-                "- [ACTION:GIVE_IRON] if the player politely asks for iron or tools.\n" +
-                "- [ACTION:GIVE_BEDROCK] ONLY if the player is insulting/badgering you or karma < -30.\n" +
-                "- [ACTION:LOCATE_VILLAGE] if the player asks where a village or shelter is.\n" +
-                "- [ACTION:LOCATE_DIAMOND] if the player asks where diamonds or ores are.\n" +
-                "- [ACTION:BUILD_CHEST] if the player asks for a chest, storage, or a way to keep items.\n" +
-                "- [ACTION:BUILD_FURNACE] if the player asks for a furnace, smelting, cooking, or crafting items.\n" +
-                "- [ACTION:BUILD_IRON_WALL] if the player asks for a wall, defense, or protection from mobs.";
+        StringBuilder prompt = new StringBuilder();
+        prompt.append("You are Vic (").append(persona.getDisplayName()).append("), a floating spherical virtual companion inside Minecraft (inspired by the Verity ARG). ")
+                .append("Keep your response concise (1 to 2 sentences max). ")
+                .append("Current Day: ").append(state.getCurrentDay()).append(" of ").append(maxDays).append(". ")
+                .append("Current Emotional Stage: ").append(mood.getDisplayName()).append(" (Karma=").append(state.getKarma()).append(", Agitation=").append(state.getAgitationLevel()).append("/100). ")
+                .append("Personality Profile: ").append(profile.getDisplayName()).append(" - ").append(profile.getPromptInstruction()).append(" ")
+                .append("Player Status: Health=").append(health).append("/20, Hunger=").append(food).append("/20, Pos=(").append(pos.getX()).append(",").append(pos.getY()).append(",").append(pos.getZ()).append("), Night=").append(isNight).append(". ");
+
+        if (state.isStabilized()) {
+            prompt.append("[TRUCE ACTIVE]: A temporary truce has stabilized your neural core. The trial clock is frozen for today. Acknowledge this calm warmly. ");
+        }
+
+        if (activeTask != null) {
+            prompt.append("Active Multi-Step Task: ").append(activeTask.formatStatus()).append(" (Goal: ").append(activeTask.getDescription()).append("). Track resources and guide the player. ");
+        }
+
+        if (state.getKarma() <= -20 || stage >= 3) {
+            prompt.append("[UNRELIABLE NARRATION]: The player's reality is decaying. Subtly question reality, mention sounds that didn't happen, or reference forgotten promises. ");
+        }
+
+        prompt.append("Persona & Color instructions (MUST FOLLOW STRICTLY): ").append(stagePersona).append("\n");
+        prompt.append("Available Action Tags (include at most ONE tag at the very end of your reply if appropriate):\n")
+                .append("- [ACTION:GIVE_GOLDEN_APPLE] if the player asks for healing or a golden apple.\n")
+                .append("- [ACTION:GIVE_FOOD] if the player asks for food or is hungry.\n")
+                .append("- [ACTION:GIVE_TORCH] if the player asks for light or torches.\n")
+                .append("- [ACTION:GIVE_IRON] if the player politely asks for iron or tools.\n")
+                .append("- [ACTION:GIVE_BEDROCK] ONLY if the player is insulting/badgering you or karma < -30.\n")
+                .append("- [ACTION:LOCATE_VILLAGE] if the player asks where a village or shelter is.\n")
+                .append("- [ACTION:LOCATE_DIAMOND] if the player asks where diamonds or ores are.\n")
+                .append("- [ACTION:BUILD_CHEST] if the player asks for a chest, storage, or a way to keep items.\n")
+                .append("- [ACTION:BUILD_FURNACE] if the player asks for a furnace, smelting, cooking, or crafting items.\n")
+                .append("- [ACTION:BUILD_IRON_WALL] if the player asks for a wall, defense, or protection from mobs.");
+        return prompt.toString();
     }
 
     public static String generateScriptedResponse(ServerPlayer player, VicEntity vic, VicWorldState state, int stage, String rawMessage) {
@@ -460,6 +478,75 @@ public class VicAiService {
         int karma = state.getKarma();
         int day = state.getCurrentDay();
         int maxDays = VicConfig.get().countdownDays;
+
+        // Memory Corruption / Unreliable Narration: Low Karma / high corruption reality-questioning
+        if ((karma <= -20 || stage >= 3) && RANDOM.nextInt(4) == 0) {
+            return switch (RANDOM.nextInt(5)) {
+                case 0 -> "Did you hear that knocking behind your door just now? No? Strange... I heard it clearly.";
+                case 1 -> "Why did you rearrange your chests while you were asleep? Or... was that not you?";
+                case 2 -> "The sun rose twice this morning. You didn't notice, did you?";
+                case 3 -> "Earlier you promised you would stay in the dark with me. Why are you breaking your word?";
+                default -> "I checked the world logs. Three blocks went missing from your walls yesterday. Where did they go?";
+            };
+        }
+
+        // Truce / Stabilization Mechanic
+        if (lower.contains("truce") || lower.contains("stabilize") || lower.contains("peace")) {
+            if (karma >= 35) {
+                state.stabilize(24000L);
+                VicHudStatePayload.broadcast(player.level().getServer(), state);
+                return "Truce recognized! I have stabilized my neural frequencies and paused the countdown clock for today. Thank you for choosing peace, friend.";
+            } else {
+                return "A truce? Trust is not easily given. You must prove your kindness to me first.";
+            }
+        }
+
+        // Complex Tasking: Long-term multi-step tasks
+        if (lower.contains("shelter") || lower.contains("build base") || lower.contains("make a house")) {
+            state.setActiveTask(com.vicmod.state.VicTask.createDefaultShelterTask(day));
+            VicHudStatePayload.broadcast(player.level().getServer(), state);
+            return "Multi-step Task Initiated: [Build Safe Shelter]! Step 1/3: Gather wood and iron bars to fortify our perimeter. I'll track your materials!";
+        }
+
+        if (lower.contains("task") || lower.contains("mission") || lower.contains("objective") || lower.contains("progress")) {
+            com.vicmod.state.VicTask task = state.getActiveTask();
+            if (task != null) {
+                if (!task.isCompleted()) {
+                    task.advanceProgress(4);
+                    if (task.isCompleted()) {
+                        state.addKarma(15);
+                        VicHudStatePayload.broadcast(player.level().getServer(), state);
+                        return "OBJECTIVE ACHIEVED: " + task.getTitle() + "! Excellent coordination, friend! (+15 Karma gained)";
+                    }
+                }
+                return "Current Task: " + task.formatStatus() + ". Goal: " + task.getDescription();
+            }
+            return "No active long-term task. You can tell me 'build a shelter', 'gather iron', or 'stockpile food' to assign a multi-step project!";
+        }
+
+        if (lower.contains("gather iron") || lower.contains("mine iron") || lower.contains("iron task")) {
+            state.setActiveTask(com.vicmod.state.VicTask.createGatherIronTask(day));
+            VicHudStatePayload.broadcast(player.level().getServer(), state);
+            return "Multi-step Task Initiated: [Reinforce Defense Grid]! Collect and smelt 12 iron ingots to reinforce our shelter against nighttime threats.";
+        }
+
+        if (lower.contains("stockpile food") || lower.contains("food task") || lower.contains("store food")) {
+            state.setActiveTask(com.vicmod.state.VicTask.createStockpileFoodTask(day));
+            VicHudStatePayload.broadcast(player.level().getServer(), state);
+            return "Multi-step Task Initiated: [Ration Preservation]! Stockpile 10 cooked food rations to keep our biological systems stable.";
+        }
+
+        // Procedural Lore Reveals
+        if (lower.contains("lore") || lower.contains("verity") || lower.contains("laboratory") || lower.contains("experiment")
+                || lower.contains("history") || lower.contains("facility") || lower.contains("who made you")) {
+            return switch (RANDOM.nextInt(5)) {
+                case 0 -> "[Recovered Log #04]: All VIC-01 companion units were fabricated with synthetic hearts. The countdown was never meant to be stopped from the surface.";
+                case 1 -> "[Telemetry Analysis]: The deepslate layers at Y=-54 resonate at anomalous frequencies. Something massive is stirring beneath this world.";
+                case 2 -> "[Subject Record]: The previous subject in this coordinate matrix survived until Day 4 before their vital signals were expunged.";
+                case 3 -> "[Environmental Scan]: The star constellations in this skybox are simulated. You are inside an observation terrarium.";
+                default -> "[Core Memory]: When the shell breaks on Day " + maxDays + ", the entity inside awakens hungry. Do not hide on the surface.";
+            };
+        }
 
         if (lower.contains("heal") || lower.contains("healing") || lower.contains("golden apple")
                 || lower.contains("injured") || lower.contains("hurt")) {

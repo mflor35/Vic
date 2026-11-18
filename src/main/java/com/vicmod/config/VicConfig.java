@@ -53,6 +53,7 @@ public class VicConfig {
     // Gameplay & Personality settings
     // vicPersona: "YELLOW" (Cheerful), "BLUE" (Liar), "GREEN" (Innocent), "PINK" (Loving), "PURPLE" (Cynic)
     public String vicPersona = "YELLOW";
+    public String personalityProfile = "CLASSIC";
     public int countdownDays = 5;
     public boolean autoSpawnDeliveryBoxOnFirstJoin = true;
     public boolean enableWorldDecay = true;
@@ -157,6 +158,14 @@ public class VicConfig {
 
     public VicPersona getEffectivePersona() {
         return VicPersona.fromString(this.vicPersona);
+    }
+
+    public VicPersonalityProfile getEffectivePersonalityProfile() {
+        return VicPersonalityProfile.fromString(this.personalityProfile);
+    }
+
+    public void setPersonalityProfile(String profile) {
+        this.personalityProfile = VicPersonalityProfile.fromString(profile).getId();
     }
 
     public void setPersona(String persona) {

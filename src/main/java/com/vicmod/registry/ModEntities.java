@@ -48,9 +48,20 @@ public class ModEntities {
                     .build(VIC_DEMON_KEY)
     );
 
+    public static final ResourceKey<EntityType<?>> SHADOW_WISP_KEY = entityKey("shadow_wisp");
+    public static final EntityType<com.vicmod.entity.ShadowWispEntity> SHADOW_WISP = Registry.register(
+            BuiltInRegistries.ENTITY_TYPE,
+            SHADOW_WISP_KEY,
+            EntityType.Builder.of(com.vicmod.entity.ShadowWispEntity::new, MobCategory.MONSTER)
+                    .sized(0.6f, 0.9f)
+                    .clientTrackingRange(48)
+                    .build(SHADOW_WISP_KEY)
+    );
+
     public static void register() {
         FabricDefaultAttributeRegistry.register(VIC_BOX, VicBoxEntity.createBoxAttributes());
         FabricDefaultAttributeRegistry.register(VIC, VicEntity.createVicAttributes());
         FabricDefaultAttributeRegistry.register(VIC_DEMON, VicDemonEntity.createDemonAttributes());
+        FabricDefaultAttributeRegistry.register(SHADOW_WISP, com.vicmod.entity.ShadowWispEntity.createWispAttributes());
     }
 }

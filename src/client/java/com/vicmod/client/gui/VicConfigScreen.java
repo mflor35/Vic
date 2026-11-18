@@ -3,6 +3,7 @@ package com.vicmod.client.gui;
 import com.vicmod.ai.VicAiService;
 import com.vicmod.config.VicConfig;
 import com.vicmod.config.VicPersona;
+import com.vicmod.config.VicPersonalityProfile;
 import com.vicmod.voice.VicTtsService;
 import com.vicmod.voice.VicVoiceInputService;
 import net.minecraft.ChatFormatting;
@@ -24,6 +25,7 @@ public class VicConfigScreen extends Screen {
     private String ttsMode;
     private String sttMode;
     private VicPersona vicPersona;
+    private VicPersonalityProfile personalityProfile;
     private int countdownDays;
     private boolean autoSpawnBox;
     private boolean enableWorldDecay;
@@ -48,6 +50,7 @@ public class VicConfigScreen extends Screen {
 
     private Button daysButton;
     private Button personaButton;
+    private Button personalityProfileButton;
     private Button autoSpawnButton;
     private Button worldDecayButton;
     private Button trueDarknessButton;
@@ -67,6 +70,7 @@ public class VicConfigScreen extends Screen {
         this.ttsMode = cfg.getEffectiveTtsMode();
         this.sttMode = cfg.getEffectiveSttMode();
         this.vicPersona = cfg.getEffectivePersona();
+        this.personalityProfile = cfg.getEffectivePersonalityProfile();
         this.countdownDays = cfg.countdownDays;
         this.autoSpawnBox = cfg.autoSpawnDeliveryBoxOnFirstJoin;
         this.enableWorldDecay = cfg.enableWorldDecay;
@@ -220,13 +224,21 @@ public class VicConfigScreen extends Screen {
           .build();
         this.addRenderableWidget(this.testMicButton);
 
-        // 6. Piper Model Path (y = 140)
-        this.piperModelPathField = new EditBox(this.font, leftColX, 140, 310, 20, Component.literal("Piper voice model path"));
+        // 6. Piper Model Path & Personality Profile (y = 140)
+        this.piperModelPathField = new EditBox(this.font, leftColX, 140, 150, 20, Component.literal("Piper voice model path"));
         this.piperModelPathField.setMaxLength(512);
         this.piperModelPathField.setValue(cfg.piperModelPath != null ? cfg.piperModelPath : "");
-        this.piperModelPathField.setHint(Component.literal("Path to .onnx file (leave blank to auto-detect bundled)"));
+        this.piperModelPathField.setHint(Component.literal("Path to .onnx file (or blank)"));
         this.piperModelPathField.setTooltip(Tooltip.create(Component.literal("Custom path to Piper ONNX model file (only needed for Piper mode)")));
         this.addRenderableWidget(this.piperModelPathField);
+
+        this.personalityProfileButton = Button.builder(getProfileButtonText(), btn -> {
+            this.personalityProfile = this.personalityProfile.next();
+            btn.setMessage(getProfileButtonText());
+        }).bounds(rightColX, 140, 150, 20)
+          .tooltip(Tooltip.create(Component.literal("Select AI Persona Profile (Classic, Stoic, Melancholy, Aggressive, Analytical)")))
+          .build();
+        this.addRenderableWidget(this.personalityProfileButton);
 
         // 7. Gameplay Toggles (y = 164 & 186)
         this.daysButton = Button.builder(getDaysButtonText(), btn -> {
@@ -385,6 +397,10 @@ public class VicConfigScreen extends Screen {
         return Component.literal("Persona: ").append(Component.literal(this.vicPersona.getDisplayName()).withStyle(this.vicPersona.getChatFormatting(), ChatFormatting.BOLD));
     }
 
+    private Component getProfileButtonText() {
+        return Component.literal("Profile: ").append(Component.literal(this.personalityProfile.getDisplayName()).withStyle(this.personalityProfile.getFormatting(), ChatFormatting.BOLD));
+    }
+
     private Component getToggleText(String name, boolean enabled) {
         return Component.literal(name + ": ").append(
                 Component.literal(enabled ? "ON" : "OFF").withStyle(enabled ? ChatFormatting.GREEN : ChatFormatting.RED, ChatFormatting.BOLD)
@@ -397,6 +413,7 @@ public class VicConfigScreen extends Screen {
         cfg.setTtsMode(this.ttsMode);
         cfg.setSttMode(this.sttMode);
         cfg.setPersona(this.vicPersona.getId());
+        cfg.setPersonalityProfile(this.personalityProfile.getId());
         cfg.ollamaUrl = this.ollamaUrlField.getValue().trim();
         cfg.ollamaModel = this.ollamaModelField.getValue().trim();
         cfg.apiEndpoint = this.apiEndpointField.getValue().trim();
@@ -417,10 +434,12 @@ public class VicConfigScreen extends Screen {
         if (this.minecraft != null && this.minecraft.player != null) {
             if (this.minecraft.player.connection != null) {
                 this.minecraft.player.connection.sendCommand("vic color " + this.vicPersona.getId().toLowerCase());
+                this.minecraft.player.connection.sendCommand("vic profile " + this.personalityProfile.getId().toLowerCase());
             }
             this.minecraft.player.sendOverlayMessage(
                     Component.literal("[Vic Config] ").withStyle(ChatFormatting.YELLOW, ChatFormatting.BOLD)
                             .append(Component.literal("Saved! Persona=" + this.vicPersona.getDisplayName()
+                                    + " (" + this.personalityProfile.getDisplayName() + ")"
                                     + ", AI=" + cfg.getEffectiveProvider()
                                     + ", TTS=" + cfg.getEffectiveTtsMode()).withStyle(ChatFormatting.GREEN))
             );
@@ -473,8 +492,9 @@ public class VicConfigScreen extends Screen {
         context.text(this.font, "API Key (Groq / OpenAI / Whisper):", leftColX, 74, 0xFFCCCCCC, true);
         context.text(this.font, "OpenAI TTS Voice (if used):", rightColX, 74, 0xFFCCCCCC, true);
 
-        // Section 3: Piper Model Path
-        context.text(this.font, "Piper Voice Model Path (.onnx; blank = auto-detect):", leftColX, 130, 0xFFCCCCCC, true);
+        // Section 3: Piper Model Path & Personality Profile
+        context.text(this.font, "Piper Model (.onnx):", leftColX, 130, 0xFFCCCCCC, true);
+        context.text(this.font, "Personality Profile:", rightColX, 130, 0xFFCCCCCC, true);
 
         // Status text / Tip
         int bottomY = this.height - 23;

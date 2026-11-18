@@ -122,7 +122,11 @@ Create a new Singleplayer world with **Allow Commands (Cheats) ON**:
   - **Green (`GREEN` — Innocent & Pure)**: Childlike, gentle, and wholesome; apologizes to blocks and begs you to hide when his shell starts cracking.
   - **Pink (`PINK` — Very Loving)**: Overwhelmingly affectionate, clingy, and devoted (escalating into an obsessive yandere in later stages).
   - **Purple (`PURPLE` — Cynic)**: Deadpan, sarcastic, and world-weary; roasts your survival skills while begrudgingly helping you.
-- **Rolling Conversation Memory**: Vic remembers your last 8 conversation turns (persisted in world NBT) across both LLM (`Ollama` / `OpenAI`) and scripted modes.
+- **Rolling Conversation Memory**: Vic remembers up to 24 conversation turns (persisted in world NBT) across both LLM (`Ollama` / `OpenAI`) and scripted modes.
+- **Personality Profiles & Emotional Spectrum**: Configure personality via `/vic profile <classic|stoic|melancholy|aggressive|analytical>` or the `V` menu. Vic's emotional state (`CURIOUS`, `BALANCED`, `ANXIOUS`, `HOSTILE`, `DEMONIC`) reflects his karma and trial day, showing dynamic visual/aural cues and an in-game HUD badge.
+- **Complex Survival Tasks**: Assign multi-step tasks such as shelter construction, iron mining, or food gathering via `/vic task start <shelter|iron|food>` or in natural chat.
+- **Truce & Stabilization**: Offer high-tier items (Vic Core, Netherite Ingot, Golden Apple) or run `/vic truce` to stabilize Vic for 24,000 ticks (1 in-game day), freezing the trial countdown and world decay.
+- **Shadow Wisps & Ambient Decay**: Dark areas manifest non-lethal Shadow Wisps (`vic:shadow_wisp`) that flee from high karma and flashlights. Late trial days feature escalating ambient audio and psychological distortion.
 - **Proactive Event Reactions**: Vic comments dynamically when your health drops critically low (even tossing emergency food in early stages), when night falls, or after long periods of silence.
 - **Physical Item Offerings (Right-Click Vic)**:
   - **Legendary (`+20` Karma + Buffs)**: Enchanted Golden Apple, Nether Star.
@@ -150,6 +154,9 @@ Create a new Singleplayer world with **Allow Commands (Cheats) ON**:
   - `/vic setday 3` — Test Stage 2+ world decay (wildlife vanishing, stalking behavior, and true darkness at night).
   - `/vic setday 6` — Immediately expire the 5-day trial and trigger the **Vic Demon** (`vic:vic_demon`) awakening.
 - `/vic apikey <key>` — Save and enable an API key for OpenAI/Groq chat responses.
+- `/vic profile <classic|stoic|melancholy|aggressive|analytical>` — Change Vic's AI personality profile.
+- `/vic task [start <shelter|iron|food> | clear]` — Manage active multi-step survival tasks.
+- `/vic truce` *(OP level 2)* — Temporarily stabilize Vic and pause the trial clock for 1 in-game day.
 
 ### 4. Items & Entities
 - **Creative Inventory**:

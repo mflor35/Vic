@@ -151,18 +151,27 @@ public class VicMod implements ModInitializer {
         VicWorldState state = VicWorldState.getServerState(server);
         if (!state.isCountdownActive()) return;
 
-        VicConfig config = VicConfig.get();
-        long elapsedTicks = Math.max(0L, overworld.getOverworldClockTime() - state.getActivationTimeTick());
-        int computedDay = (int) (elapsedTicks / 24000L) + 1;
+        state.tickStabilization(100L);
 
-        if (computedDay > state.getCurrentDay()) {
-            state.setCurrentDay(computedDay);
-            onNewDayReached(server, overworld, state, computedDay, config.countdownDays);
+        VicConfig config = VicConfig.get();
+        if (!state.isStabilized()) {
+            long elapsedTicks = Math.max(0L, overworld.getOverworldClockTime() - state.getActivationTimeTick());
+            int computedDay = (int) (elapsedTicks / 24000L) + 1;
+
+            if (computedDay > state.getCurrentDay()) {
+                state.setCurrentDay(computedDay);
+                onNewDayReached(server, overworld, state, computedDay, config.countdownDays);
+            }
+        } else {
+            // Keep clock frozen during stabilization
+            state.resetCountdownToDay(state.getCurrentDay(), overworld.getOverworldClockTime());
         }
 
         int stage = state.computeStage(config.countdownDays);
 
-        if (config.enableWorldDecay && stage >= 2 && overworld.getGameTime() % 400 == 0) {
+        // Resource Dependency: high agitation speeds up world decay frequency
+        int decayInterval = state.getAgitationLevel() >= 50 ? 200 : 400;
+        if (config.enableWorldDecay && stage >= 2 && !state.isStabilized() && overworld.getGameTime() % decayInterval == 0) {
             for (ServerPlayer player : overworld.players()) {
                 List<Animal> animals = overworld.getEntitiesOfClass(
                         Animal.class,
@@ -177,8 +186,55 @@ public class VicMod implements ModInitializer {
             }
         }
 
+        // Ambient Soundscape Decay: subtle, unique, escalating ambient sounds
+        if (stage >= 2 && overworld.getGameTime() % 160 == 0) {
+            int chance = stage >= 4 ? 85 : (stage == 3 ? 60 : 35);
+            if (state.getAgitationLevel() >= 40) chance += 20;
+            if (overworld.getRandom().nextInt(100) < chance) {
+                for (ServerPlayer player : overworld.players()) {
+                    if (player.isSpectator()) continue;
+                    switch (overworld.getRandom().nextInt(5)) {
+                        case 0 -> overworld.playSound(null, player.blockPosition(), SoundEvents.WARDEN_HEARTBEAT, SoundSource.AMBIENT, 0.8f, 0.9f);
+                        case 1 -> overworld.playSound(null, player.blockPosition(), SoundEvents.SCULK_SHRIEKER_SHRIEK, SoundSource.AMBIENT, 0.18f, 1.4f);
+                        case 2 -> overworld.playSound(null, player.blockPosition(), SoundEvents.AMETHYST_BLOCK_RESONATE, SoundSource.AMBIENT, 0.7f, 0.45f);
+                        case 3 -> overworld.playSound(null, player.blockPosition(), SoundEvents.NOTE_BLOCK_SNARE.value(), SoundSource.AMBIENT, 0.5f, 0.55f);
+                        default -> overworld.playSound(null, player.blockPosition(), SoundEvents.PORTAL_AMBIENT, SoundSource.AMBIENT, 0.45f, 0.6f);
+                    }
+                }
+            }
+        }
+
         long dayTime = overworld.getOverworldClockTime() % 24000L;
         boolean isNight = dayTime >= 13000L && dayTime <= 23000L;
+
+        // Shadow Entity Encounters (Pre-Demon wisps)
+        if (stage >= 1 && !state.isDemonAwakened() && !state.isStabilized() && overworld.getGameTime() % 300 == 0) {
+            for (ServerPlayer player : overworld.players()) {
+                if (player.isCreative() || player.isSpectator()) continue;
+                List<com.vicmod.entity.ShadowWispEntity> nearbyWisps = overworld.getEntitiesOfClass(
+                        com.vicmod.entity.ShadowWispEntity.class,
+                        player.getBoundingBox().inflate(32.0),
+                        Entity::isAlive
+                );
+                if (nearbyWisps.isEmpty()) {
+                    int light = overworld.getMaxLocalRawBrightness(player.blockPosition());
+                    if (light <= 6 || isNight) {
+                        double angle = overworld.getRandom().nextDouble() * Math.PI * 2.0;
+                        double dist = 14.0 + overworld.getRandom().nextDouble() * 8.0;
+                        double sx = player.getX() + Math.cos(angle) * dist;
+                        double sz = player.getZ() + Math.sin(angle) * dist;
+                        double sy = player.getY() + (overworld.getRandom().nextDouble() - 0.2) * 2.0;
+
+                        com.vicmod.entity.ShadowWispEntity wisp = ModEntities.SHADOW_WISP.create(overworld, EntitySpawnReason.EVENT);
+                        if (wisp != null) {
+                            wisp.snapTo(sx, sy, sz, overworld.getRandom().nextFloat() * 360.0f, 0.0f);
+                            overworld.addFreshEntity(wisp);
+                        }
+                    }
+                }
+            }
+        }
+
         if (config.enableTrueDarknessDuringNight && isNight && stage >= 1) {
             for (ServerPlayer player : overworld.players()) {
                 if (player.isCreative() || player.isSpectator()) continue;
@@ -326,12 +382,67 @@ public class VicMod implements ModInitializer {
                                          String raw = StringArgumentType.getString(ctx, "persona");
                                          return applyPersonaCommand(ctx.getSource(), raw);
                                      })))
-                     .then(Commands.literal("personality")
+                     .then(Commands.literal("persona")
                              .then(Commands.argument("persona", StringArgumentType.word())
                                      .executes(ctx -> {
                                          String raw = StringArgumentType.getString(ctx, "persona");
                                          return applyPersonaCommand(ctx.getSource(), raw);
                                      })))
+                     .then(Commands.literal("profile")
+                             .then(Commands.argument("profile", StringArgumentType.word())
+                                     .executes(ctx -> {
+                                         String raw = StringArgumentType.getString(ctx, "profile");
+                                         return applyProfileCommand(ctx.getSource(), raw);
+                                     })))
+                     .then(Commands.literal("personality")
+                             .then(Commands.argument("profile", StringArgumentType.word())
+                                     .executes(ctx -> {
+                                         String raw = StringArgumentType.getString(ctx, "profile");
+                                         return applyProfileCommand(ctx.getSource(), raw);
+                                     })))
+                     .then(Commands.literal("task")
+                             .executes(ctx -> {
+                                 VicWorldState state = VicWorldState.getServerState(ctx.getSource().getServer());
+                                 com.vicmod.state.VicTask task = state.getActiveTask();
+                                 if (task != null) {
+                                     ctx.getSource().sendSuccess(() -> Component.literal("=== Active Vic Task ===\n" + task.formatStatus() + "\n" + task.getDescription()).withStyle(ChatFormatting.AQUA), false);
+                                 } else {
+                                     ctx.getSource().sendSuccess(() -> Component.literal("No active task. Start one with: /vic task start <shelter|iron|food> or tell Vic in chat!").withStyle(ChatFormatting.YELLOW), false);
+                                 }
+                                 return 1;
+                             })
+                             .then(Commands.literal("clear")
+                                     .executes(ctx -> {
+                                         VicWorldState state = VicWorldState.getServerState(ctx.getSource().getServer());
+                                         state.clearActiveTask();
+                                         VicHudStatePayload.broadcast(ctx.getSource().getServer(), state);
+                                         ctx.getSource().sendSuccess(() -> Component.literal("Active task cleared.").withStyle(ChatFormatting.YELLOW), false);
+                                         return 1;
+                                     }))
+                             .then(Commands.literal("start")
+                                     .then(Commands.argument("type", StringArgumentType.word())
+                                             .executes(ctx -> {
+                                                 String type = StringArgumentType.getString(ctx, "type").toLowerCase();
+                                                 VicWorldState state = VicWorldState.getServerState(ctx.getSource().getServer());
+                                                 int day = state.getCurrentDay();
+                                                 com.vicmod.state.VicTask task = switch (type) {
+                                                     case "iron" -> com.vicmod.state.VicTask.createGatherIronTask(day);
+                                                     case "food" -> com.vicmod.state.VicTask.createStockpileFoodTask(day);
+                                                     default -> com.vicmod.state.VicTask.createDefaultShelterTask(day);
+                                                 };
+                                                 state.setActiveTask(task);
+                                                 VicHudStatePayload.broadcast(ctx.getSource().getServer(), state);
+                                                 ctx.getSource().sendSuccess(() -> Component.literal("Started task: " + task.formatStatus() + " - " + task.getDescription()).withStyle(ChatFormatting.GREEN), false);
+                                                 return 1;
+                                             }))))
+                     .then(Commands.literal("truce")
+                             .executes(ctx -> {
+                                 VicWorldState state = VicWorldState.getServerState(ctx.getSource().getServer());
+                                 state.stabilize(24000L);
+                                 VicHudStatePayload.broadcast(ctx.getSource().getServer(), state);
+                                 ctx.getSource().sendSuccess(() -> Component.literal("Vic Truce / Stabilization initiated! Countdown clock paused for 24,000 ticks.").withStyle(ChatFormatting.GOLD, ChatFormatting.BOLD), true);
+                                 return 1;
+                             }))
                      .then(Commands.literal("ollama")
                              .then(Commands.literal("list")
                                      .executes(ctx -> {
@@ -547,6 +658,19 @@ public class VicMod implements ModInitializer {
          source.sendSuccess(() -> Component.literal("Vic color & personality set to: ")
                  .withStyle(ChatFormatting.WHITE)
                  .append(Component.literal(persona.getDisplayName()).withStyle(persona.getChatFormatting(), ChatFormatting.BOLD)), false);
+         return 1;
+     }
+
+     private int applyProfileCommand(CommandSourceStack source, String rawProfile) {
+         com.vicmod.config.VicPersonalityProfile profile = com.vicmod.config.VicPersonalityProfile.fromString(rawProfile);
+         VicConfig cfg = VicConfig.get();
+         cfg.setPersonalityProfile(profile.getId());
+         VicConfig.save();
+
+         source.sendSuccess(() -> Component.literal("Vic Personality Profile set to: ")
+                 .withStyle(ChatFormatting.WHITE)
+                 .append(Component.literal(profile.getDisplayName()).withStyle(profile.getFormatting(), ChatFormatting.BOLD))
+                 .append(Component.literal(" - " + profile.getDescription()).withStyle(ChatFormatting.GRAY)), false);
          return 1;
      }
 }
