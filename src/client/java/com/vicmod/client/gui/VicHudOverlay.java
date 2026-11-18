@@ -64,10 +64,10 @@ public class VicHudOverlay implements HudElement {
         int boxX = 8;
         int boxY = 8;
         int boxWidth = 148;
-        int boxHeight = hasPad ? 52 : 40;
+        int boxHeight = hasPad ? 56 : 42;
 
         VicPersona persona = resolveActivePersona(client);
-        int personaHex = persona.getHexColor();
+        int personaHex = persona.getHexColor() & 0x00FFFFFF;
         int borderColor = switch (displayStage) {
             case 5 -> 0xCC55FF55;
             case 0, 1 -> 0xCC000000 | personaHex;
@@ -83,21 +83,24 @@ public class VicHudOverlay implements HudElement {
         context.fill(boxX, boxY, boxX + 1, boxY + boxHeight, borderColor);
         context.fill(boxX + boxWidth - 1, boxY, boxX + boxWidth, boxY + boxHeight, borderColor);
 
+        // Separate stratum so foreground text and bar render cleanly above background
+        context.nextStratum();
+
         // Row 1: Day counter & face badge
         String dayLabel;
         int dayColor;
         if (displayStage == 5) {
             dayLabel = "TRIAL SURVIVED [VICTORY]";
-            dayColor = 0x55FF55;
+            dayColor = 0xFF55FF55;
         } else if (demonAwakened) {
             dayLabel = "DAY " + displayDay + "/" + displayMaxDays + " [EXPIRED]";
-            dayColor = 0xFF5555;
+            dayColor = 0xFFFF5555;
         } else if (countdownActive) {
             dayLabel = "Day " + displayDay + "/" + displayMaxDays + " [" + persona.getShortLabel() + "]";
-            dayColor = displayStage >= 2 ? 0xFFAA00 : personaHex;
+            dayColor = displayStage >= 2 ? 0xFFFFAA00 : (0xFF000000 | personaHex);
         } else {
             dayLabel = "Day " + displayDay + "/" + displayMaxDays + " [" + persona.getShortLabel() + "]";
-            dayColor = personaHex;
+            dayColor = 0xFF000000 | personaHex;
         }
 
         String faceBadge = switch (displayStage) {
@@ -109,11 +112,11 @@ public class VicHudOverlay implements HudElement {
             default -> "!!";
         };
         int badgeColor = switch (displayStage) {
-            case 5 -> 0x55FF55;
-            case 0 -> 0xFFE135;
-            case 1 -> 0xFFAA00;
-            case 2 -> 0xFF5555;
-            default -> 0xCC0000;
+            case 5 -> 0xFF55FF55;
+            case 0 -> 0xFFFFE135;
+            case 1 -> 0xFFFFAA00;
+            case 2 -> 0xFFFF5555;
+            default -> 0xFFCC0000;
         };
 
         context.text(font, dayLabel, boxX + 6, boxY + 5, dayColor, true);
@@ -125,25 +128,25 @@ public class VicHudOverlay implements HudElement {
         String karmaText = "Karma: " + karmaSign + displayKarma;
         int karmaColor;
         if (displayKarma >= 15) {
-            karmaColor = 0x55FF55;
+            karmaColor = 0xFF55FF55;
         } else if (displayKarma >= 0) {
-            karmaColor = 0xFFFF55;
+            karmaColor = 0xFFFFFF55;
         } else if (displayKarma >= -35) {
-            karmaColor = 0xFFAA00;
+            karmaColor = 0xFFFFAA00;
         } else {
-            karmaColor = 0xFF5555;
+            karmaColor = 0xFFFF5555;
         }
 
         String stageText = displayStage == 5 ? "CLEARED" : (demonAwakened ? "DEMON" : ("Stage " + displayStage));
         int stageWidth = font.width(stageText);
 
         context.text(font, karmaText, boxX + 6, boxY + 17, karmaColor, true);
-        context.text(font, stageText, boxX + boxWidth - 6 - stageWidth, boxY + 17, 0xAAAAAA, true);
+        context.text(font, stageText, boxX + boxWidth - 6 - stageWidth, boxY + 17, 0xFFAAAAAA, true);
 
         // Row 3: Karma visual bar (-100 to +100)
         int barX = boxX + 6;
         int barY = boxY + 30;
-        int barWidth = boxWidth - 12; // 130px
+        int barWidth = boxWidth - 12; // 136px
         int barHeight = 5;
         int centerBarX = barX + barWidth / 2;
 
@@ -179,7 +182,7 @@ public class VicHudOverlay implements HudElement {
                 padPrefix += " (" + VicControllerService.getExternalControllerModName() + ")";
             }
             String padHint = padPrefix + ": [D-Up] Mic [D-Dn] Light";
-            context.text(font, padHint, boxX + 6, boxY + 40, 0x55FFFF, true);
+            context.text(font, padHint, boxX + 6, boxY + 41, 0xFF55FFFF, true);
         }
     }
 
