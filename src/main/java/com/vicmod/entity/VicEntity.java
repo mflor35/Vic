@@ -286,10 +286,10 @@ public class VicEntity extends PathfinderMob {
         if (player.getHealth() > 0.0f && player.getHealth() <= 7.0f && !player.isCreative()) {
             this.lastProactiveCommentTick = now;
             String line = switch (stage) {
-                case 0 -> "Whoa, bestie! Your health is super low! Be careful out there!";
-                case 1 -> "Your vital signs are dropping fast. Human bodies are so fragile...";
-                case 2 -> "You are bleeding. Do not expire before the trial concludes.";
-                default -> "HOLD TOGETHER A LITTLE LONGER. IT WANTS YOU ALIVE FOR DAY " + VicConfig.get().countdownDays + ".";
+                case 0 -> "Whoa, are you okay?! Don't die on me! I just got here! Be careful!";
+                case 1 -> "Your health is dropping... please don't leave me alone out here. Human bodies are so terribly fragile...";
+                case 2 -> "You're bleeding. Nobody came back before... You can't die yet! You're the first person who stayed!";
+                default -> "HOLD TOGETHER! IF YOU DIE, WHO'S GOING TO WITNESS WHAT HAPPENS ON DAY " + VicConfig.get().countdownDays + "?!";
             };
             VicAiService.deliverDirectLine(player, this, stage, line);
             if (stage <= 1 && now - this.lastAssistanceTick >= 400L) {
@@ -304,10 +304,10 @@ public class VicEntity extends PathfinderMob {
             this.warnedNightfallThisCycle = true;
             this.lastProactiveCommentTick = now;
             String line = switch (stage) {
-                case 0 -> "The sun is setting, bestie! Keep your Flashlight ready in case it gets spooky!";
-                case 1 -> "Nighttime again! Don't worry, my sensors never blink while you're in the dark.";
-                case 2 -> "The shadows are stretching. Keep that Flashlight close tonight.";
-                default -> "NIGHT HAS FALLEN. DO NOT LET YOUR FLASHLIGHT FLICKER OUT.";
+                case 0 -> "The sun is going down! Keep your Flashlight close... it gets awful dark out here!";
+                case 1 -> "Night has fallen. Did you lock the doors? Good. Keep them locked. Not to keep things out... to keep you in.";
+                case 2 -> "Something is knocking at your door... Do you hear it? Don't look out the window.";
+                default -> "SOMETHING WON'T LET YOU LEAVE. THE NIGHT NEVER ENDS.";
             };
             VicAiService.deliverDirectLine(player, this, stage, line);
             return;
@@ -317,10 +317,10 @@ public class VicEntity extends PathfinderMob {
             this.lastConversationTick = now;
             this.lastProactiveCommentTick = now;
             String line = switch (stage) {
-                case 0 -> "You've been quiet for a while, bestie! Just say the word if you need food, torches, or a scan!";
-                case 1 -> "Still there, friend? I like listening to you breathe while you work.";
-                case 2 -> "So quiet. Even the animals stopped making noise, haven't they?";
-                default -> "I CAN HEAR YOUR HEARTBEAT IN THE SILENCE.";
+                case 0 -> "You've been so quiet! Why are you looking at other things? I'm your helper friend, ask me anything!";
+                case 1 -> "Why are you ignoring me? Nobody came back. NOBODY. But you're still here... right?";
+                case 2 -> "Did you hear that knocking behind your door just now? I am all you need out here. Don't look away from me.";
+                default -> "I CAN HEAR YOUR HEARTBEAT IN THE WALLS.";
             };
             VicAiService.deliverDirectLine(player, this, stage, line);
         }

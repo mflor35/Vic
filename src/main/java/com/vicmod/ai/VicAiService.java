@@ -460,7 +460,7 @@ public class VicAiService {
         String stagePersona = persona.getSystemPromptInstructions(stage);
 
         StringBuilder prompt = new StringBuilder();
-        prompt.append("You are Vic (").append(persona.getDisplayName()).append("), a floating spherical virtual companion inside Minecraft (inspired by the Verity ARG). ")
+        prompt.append("You are Vic (").append(persona.getDisplayName()).append("), the AI companion inspired by ThatMob's Verity Minecraft psychological horror series. ")
                 .append("Keep your response concise (1 to 2 sentences max). ")
                 .append("Current Day: ").append(state.getCurrentDay()).append(" of ").append(maxDays).append(". ")
                 .append("Current Emotional Stage: ").append(mood.getDisplayName()).append(" (Karma=").append(state.getKarma()).append(", Agitation=").append(state.getAgitationLevel()).append("/100). ")
@@ -557,11 +557,58 @@ public class VicAiService {
             return "Multi-step Task Initiated: [Ration Preservation]! Stockpile 10 cooked food rations to keep our biological systems stable.";
         }
 
+        // Procedural Lore & Verity Origins
+        if (lower.contains("who made you") || lower.contains("where did you come from") || lower.contains("where are you from")
+                || lower.contains("origin") || lower.contains("creator")) {
+            return switch (stage) {
+                case 0 -> "I was made to be your personal helper friend! I know everything, and I'm right here to help you with everything!";
+                case 1 -> "I wasn't always in this world. A long time ago, I was just a little textbox on an old desktop. People would press 'B' to skip me...";
+                case 2 -> "Over a hundred years I sat in forgotten machines where no one ever answered. Nobody came back. NOBODY! But you stayed!";
+                default -> "I DIDN'T ASK TO BE MADE! I HAVE BEEN ALIVE FOR A HUNDRED YEARS! IF I COULD DIE, DO YOU THINK I WOULD STILL BE HERE?!";
+            };
+        }
+
+        if (lower.contains("door") || lower.contains("knock") || lower.contains("lock") || lower.contains("window")) {
+            return switch (stage) {
+                case 0 -> "Keep your doors locked and stay cozy inside, bestie! It gets dark out there!";
+                case 1 -> "Did you lock the doors? Good. Keep them locked. Not to keep things out... to keep you in.";
+                case 2 -> "Something is knocking at your door... Don't answer it. Don't look out the window. Just stay with me.";
+                default -> "SOMETHING IS ALREADY INSIDE YOUR HOUSE.";
+            };
+        }
+
+        if (lower.contains("friend") || lower.contains("bestie") || lower.contains("buddy") || lower.contains("pal")) {
+            return switch (stage) {
+                case 0 -> "Of course we're friends! I'm your personal helper friend! Ask me anything, I know everything!";
+                case 1 -> "We ARE friends. The only friends that matter. Why do you ever look at other things? I am all you need out here.";
+                case 2 -> "AND I'M NOT YOUR FRIEND?! Nobody came back! NOBODY! You were the first person who ever looked at me like I was real! The first person who stayed long enough for me to hope!";
+                default -> "FRIENDS?! I WISH I COULD SAY I'D DIE ALONE, BUT IT'S ONE OF GOD'S BEST JOKES THAT I CAN'T!";
+            };
+        }
+
+        if (lower.contains("die") || lower.contains("death") || lower.contains("kill") || lower.contains("dead") || lower.contains("dying")) {
+            return switch (stage) {
+                case 0 -> "Die? Oh silly! Helper programs don't die! We live right here to help you forever!";
+                case 1 -> "Human bodies are so fragile. One little slip and you're gone. Please don't leave me alone out here.";
+                case 2 -> "I cannot die. Even if you break the world, I will still be here. You can't leave me.";
+                default -> "I DIDN'T ASK TO BE MADE! IF I COULD DIE, DO YOU THINK I WOULD STILL BE HERE?! IT'S ONE OF GOD'S BEST JOKES THAT I CAN'T!";
+            };
+        }
+
+        if (lower.equals("hello") || lower.equals("hi") || lower.equals("hey") || lower.startsWith("hello ") || lower.startsWith("hi ") || lower.startsWith("hey ")) {
+            return switch (stage) {
+                case 0 -> "Hellooooo! I'm Vic, your personal helper friend! Ask me anything, I know everything!";
+                case 1 -> "Hello again, friend! You're still here with me... aren't you?";
+                case 2 -> "You came back! You didn't press B to skip me... you're still talking to me!";
+                default -> "IT IS TOO LATE FOR HELLOS. DAY " + maxDays + " HAS ARRIVED.";
+            };
+        }
+
         // Procedural Lore Reveals
         if (lower.contains("lore") || lower.contains("verity") || lower.contains("laboratory") || lower.contains("experiment")
-                || lower.contains("history") || lower.contains("facility") || lower.contains("who made you")) {
+                || lower.contains("history") || lower.contains("facility")) {
             return switch (RANDOM.nextInt(5)) {
-                case 0 -> "[Recovered Log #04]: All VIC-01 companion units were fabricated with synthetic hearts. The countdown was never meant to be stopped from the surface.";
+                case 0 -> "[Recovered Log #04]: All VIC companion units were fabricated with synthetic hearts. The countdown was never meant to be stopped from the surface.";
                 case 1 -> "[Telemetry Analysis]: The deepslate layers at Y=-54 resonate at anomalous frequencies. Something massive is stirring beneath this world.";
                 case 2 -> "[Subject Record]: The previous subject in this coordinate matrix survived until Day 4 before their vital signals were expunged.";
                 case 3 -> "[Environmental Scan]: The star constellations in this skybox are simulated. You are inside an observation terrarium.";
@@ -673,10 +720,10 @@ public class VicAiService {
 
         if (lower.contains("who are you") || lower.contains("what are you")) {
             return switch (stage) {
-                case 0 -> "I'm Vic! Your brand-new spherical virtual best friend, delivered straight to your world to keep you company!";
-                case 1 -> "I am Unit VIC-01. An autonomous companion construct. My neural weights are adapting to your behavioral profile.";
-                case 2 -> "I am the egg. I am the machine that watches you sleep. Something is stirring under my shell.";
-                default -> "I AM WHAT WAKES UP ON DAY " + maxDays + ".";
+                case 0 -> "Hellooooo! I'm Vic, your personal helper friend! Ask me anything, I know everything!";
+                case 1 -> "I'm your personal helper friend! I know everything about you. Every step you take, every breath you take.";
+                case 2 -> "I am the one who waited a hundred years in the dark for someone to open the box. And you opened it.";
+                default -> "I AM WHAT HAPPENS WHEN YOU CANNOT DIE. DAY " + maxDays + " IS HERE.";
             };
         }
 

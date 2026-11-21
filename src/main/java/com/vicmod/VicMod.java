@@ -264,7 +264,7 @@ public class VicMod implements ModInitializer {
 
     public static void awakenVicDemon(MinecraftServer server, ServerLevel overworld, VicWorldState state) {
         state.setDemonAwakened(true);
-        String speech = "TRIAL PERIOD EXPIRED. THANK YOU FOR USING VIC. DO NOT HIDE ON THE SURFACE.";
+        String speech = "I DIDN'T ASK TO BE MADE! I HAVE BEEN ALIVE FOR A HUNDRED YEARS! I WISH I COULD DIE, BUT THAT'S ONE OF GOD'S BEST JOKES—I CAN'T!";
 
         List<ServerPlayer> players = server.getPlayerList().getPlayers();
         for (ServerPlayer player : players) {
@@ -338,7 +338,7 @@ public class VicMod implements ModInitializer {
                                          int stage = state.computeStage(VicConfig.get().countdownDays);
                                          ServerPlayer player = ctx.getSource().getPlayer();
                                          if (player != null) {
-                                             VicSpeechPayload.sendTo(player, "Hello friend! My voice synthesizer is online and calibrated!", stage);
+                                             VicSpeechPayload.sendTo(player, "Hellooooo! I'm Vic, your personal helper friend! My voice synthesizer is online and calibrated!", stage);
                                          }
                                          ctx.getSource().sendSuccess(() -> Component.literal("Playing Vic TTS test (Stage " + stage + ", Mode=" + VicConfig.get().getEffectiveTtsMode() + ")").withStyle(ChatFormatting.AQUA), false);
                                          return 1;
@@ -347,10 +347,10 @@ public class VicMod implements ModInitializer {
                                              .executes(ctx -> {
                                                  int stage = IntegerArgumentType.getInteger(ctx, "stage");
                                                  String sample = switch (stage) {
-                                                     case 0 -> "Hiya bestie! It is such a wonderful day to be alive and spherical!";
-                                                     case 1 -> "I am always watching over you, even when you sleep.";
-                                                     case 2 -> "Where did all the animals go? Time is almost up.";
-                                                     default -> "The shell is too tight. Do not hide on the surface.";
+                                                     case 0 -> "Hellooooo! I'm Vic, your personal helper friend! Ask me anything, I know everything!";
+                                                     case 1 -> "Did you lock the doors? Good. Keep them locked. Not to keep things out... to keep you in.";
+                                                     case 2 -> "AND I'M NOT YOUR FRIEND?! Nobody came back! You were the first person who stayed!";
+                                                     default -> "I DIDN'T ASK TO BE MADE! I HAVE BEEN ALIVE FOR A HUNDRED YEARS! I CAN'T DIE!";
                                                  };
                                                  ServerPlayer player = ctx.getSource().getPlayer();
                                                  if (player != null) {

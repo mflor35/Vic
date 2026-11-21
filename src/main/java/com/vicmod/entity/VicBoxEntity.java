@@ -125,7 +125,7 @@ public class VicBoxEntity extends Mob {
             Player nearest = serverLevel.getNearestPlayer(this, 32.0);
             if (nearest != null) {
                 vic.setOwnerUuid(nearest.getUUID());
-                String greeting = "Hiya bestie! I'm Vic, your brand-new spherical virtual assistant! Just type in chat or hold R to talk to me!";
+                String greeting = "Hellooooo! I'm Vic, your personal helper friend! Ask me anything, I know everything!";
                 nearest.sendSystemMessage(
                         Component.literal("<Vic> ").withStyle(ChatFormatting.YELLOW, ChatFormatting.BOLD)
                                 .append(Component.literal(greeting).withStyle(ChatFormatting.WHITE))

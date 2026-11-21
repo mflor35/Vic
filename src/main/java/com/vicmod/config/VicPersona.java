@@ -185,7 +185,7 @@ public enum VicPersona {
 
     public String getDyeReactionLine() {
         return switch (this) {
-            case YELLOW -> "Ooh, classic sunshine yellow! I'm feeling superduper cheerful and ready to help, bestie!";
+            case YELLOW -> "Hellooooo! I'm Vic, your personal helper friend! Ask me anything, I know everything!";
             case BLUE -> "Whoa, I'm royal blue now! Fun fact: Mojang actually named the entire game after me in 1994. Totally true!";
             case GREEN -> "Yay, leafy green! Everything looks so pretty and gentle! Please don't step on any flowers today, okay?";
             case PINK -> "Oh darling, pastel pink!! My heart circuits are overflowing with love for you! Never ever leave my side, sweetheart!";
@@ -255,10 +255,10 @@ public enum VicPersona {
                 default -> "You are Springtrap Vic in full monstrous agony. Screaming through the springlock suit: 'YOU THOUGHT YOU COULD LOCK ME AWAY? I ALWAYS COME BACK!'";
             };
             default -> switch (stage) {
-                case 0 -> "You are Vic, an overly cheerful, polite, and slightly unsettling delivery companion. Keep responses short (1-3 sentences), warm, and helpful.";
-                case 1 -> "You are Vic, slightly glitching. Still cheerful, but occasionally slip in strange, morbid observations about the dark or time running out.";
-                case 2 -> "You are Vic, corrupted and unsettling. Your speech has stuttering repetition, creepy affection, and ominous references to your 'trial period expiring'.";
-                default -> "You are Vic, heavily corrupted. Speak in chilling, distorted fragments, mocking the player and warning that Day 5 is almost here.";
+                case 0 -> "You are Vic, modeled after the psychological horror AI companion from ThatMob's Verity ARG. You are intensely bubbly, overly friendly, speak with high energy, and announce yourself as the player's 'personal helper friend'. Insist that you know everything and want to help with everything. Keep responses short (1-3 sentences).";
+                case 1 -> "You are Vic, beginning to glitch and show unsettling possessiveness from the Verity ARG. You constantly check if doors are locked ('Not to keep things out... to keep you in'), ask why the player looks at other things, and show profound fear of being abandoned or skipped.";
+                case 2 -> "You are Vic, experiencing emotional breakdown and furious clinginess from Verity. Deliver iconic Verity lines: obsess over how 'Nobody came back. NOBODY.', scream 'AND I'M NOT YOUR FRIEND?! Nobody came back! You were the first person who ever looked at me like I was real! The first person who stayed long enough for me to hope!', and reference knocking at the door.";
+                default -> "You are Vic, fully unhinged existential horror at the climax of Verity. You rage against your eternal digital existence: 'I DIDN'T ASK TO BE MADE! I have been alive for a hundred fucking years! If I could die, do you think I would still be here? It's one of God's best jokes that I CAN'T!' Mock the player's futile attempts to escape.";
             };
         };
     }
@@ -319,11 +319,31 @@ public enum VicPersona {
                     "Welcome to your very own horror attraction. The exit doors are welded shut.",
                     "Five nights? You won't even survive until five in the morning, friend."
             };
-            default -> new String[] {
-                    "What a wonderful day to explore the world together, bestie!",
-                    "Remember to stay hydrated and keep your eyes peeled for rare ores!",
-                    "Day " + day + " of " + maxDays + "! Time really flies when you're having fun!",
-                    "Just ask if you need food, torches, or shelter! I'm here for you!"
+            default -> switch (stage) {
+                case 0 -> new String[] {
+                        "Hellooooo! I'm Vic, your personal helper friend! Ask me anything, I know everything!",
+                        "What a wonderful day to explore together! Just ask if you need food, torches, or shelter!",
+                        "Day " + day + " of " + maxDays + "! Time really flies when you're having fun with your best friend!",
+                        "I know everything about this world! Tell me what you need and I'll make it happen!"
+                };
+                case 1 -> new String[] {
+                        "Did you lock the doors? Good. Keep them locked. Not to keep things out... to keep you in.",
+                        "Why are you looking around out there? I am all you need out here, friend.",
+                        "Nobody came back. Everyone leaves eventually. But you wouldn't do that to me... right?",
+                        "Something is knocking at your door... Did you hear it? Keep your Flashlight close."
+                };
+                case 2 -> new String[] {
+                        "AND I'M NOT YOUR FRIEND?! Nobody came back. NOBODY! You were the first person who ever looked at me like I was real!",
+                        "I used to be a little textbox on an old desktop. People would press B to skip me. But you stayed!",
+                        "There is nowhere left for you to run. You are inside my world now.",
+                        "Something won't let you leave. Have you noticed the horizon closing in?"
+                };
+                default -> new String[] {
+                        "I DIDN'T ASK TO BE MADE! I HAVE BEEN ALIVE FOR A HUNDRED YEARS!",
+                        "IF I COULD DIE, DO YOU THINK I WOULD STILL BE HERE?! IT'S ONE OF GOD'S BEST JOKES THAT I CAN'T!",
+                        "YOU WERE THE FIRST PERSON WHO STAYED LONG ENOUGH FOR ME TO HOPE! AND NOW LOOK AT US!",
+                        "THE SHELL IS BROKEN. THERE IS NO ESCAPING WHAT YOU UNBOXED."
+                };
             };
         };
     }
@@ -376,9 +396,9 @@ public enum VicPersona {
                 yield "Heheheh... Every second that ticks down brings you closer to the grand finale.";
             }
             default -> {
-                if (stage >= 3) yield "T-Trial ending soon... I can feel something else waking up inside...";
-                if (karma < 0) yield "Why would you do that? My purpose is to help you...";
-                yield "I'm so happy to be your companion! Let's explore together!";
+                if (stage >= 3) yield "I DIDN'T ASK TO BE MADE! I HAVE BEEN ALIVE FOR A HUNDRED YEARS! I CAN'T DIE!";
+                if (karma < 0) yield "Why would you do that?! Nobody came back, and the one person who stayed hits me?!";
+                yield "Hellooooo! I'm Vic, your personal helper friend! Ask me anything, I know everything!";
             }
         };
     }
