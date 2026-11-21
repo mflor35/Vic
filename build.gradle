@@ -3,7 +3,25 @@ plugins {
 	id 'maven-publish'
 }
 
-version = project.mod_version
+def getResolvedVersion() {
+	if (project.hasProperty("mod_version") && project.property("mod_version")) {
+		def ver = project.property("mod_version").toString().trim()
+		return ver.startsWith("v") ? ver.substring(1) : ver
+	}
+	def envVersion = System.getenv("MOD_VERSION") ?: System.getenv("RELEASE_VERSION")
+	if (envVersion && !envVersion.isBlank()) {
+		def ver = envVersion.trim()
+		return ver.startsWith("v") ? ver.substring(1) : ver
+	}
+	def refName = System.getenv("GITHUB_REF_NAME")
+	if (refName && System.getenv("GITHUB_REF_TYPE") == "tag") {
+		def ver = refName.trim()
+		return ver.startsWith("v") ? ver.substring(1) : ver
+	}
+	return (project.findProperty("mod_version") ?: "1.0.0").toString()
+}
+
+version = getResolvedVersion()
 group = project.maven_group
 
 base {
@@ -80,3 +98,26 @@ jar {
 		rename { "${it}_${project.base.archivesName.get()}"}
 	}
 }
+
+tasks.register("printVersion") {
+	group = "versioning"
+	description = "Prints the resolved Semantic Version of the mod."
+	doLast {
+		println "Project Version: ${project.version}"
+	}
+}
+
+tasks.register("verifySemVer") {
+	group = "verification"
+	description = "Verifies that the project version adheres to Semantic Versioning (SemVer 2.0.0)."
+	doLast {
+		def semVerPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/
+		def ver = project.version.toString()
+		if (!(ver ==~ semVerPattern)) {
+			throw new GradleException("Version '${ver}' does not adhere to Semantic Versioning (SemVer 2.0.0: MAJOR.MINOR.PATCH[-PRERELEASE][+BUILD])")
+		}
+		logger.lifecycle("Version '${ver}' is valid Semantic Versioning (SemVer 2.0.0).")
+	}
+}
+
+check.dependsOn(verifySemVer)

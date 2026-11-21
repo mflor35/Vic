@@ -58,9 +58,36 @@ The default chat provider is [Ollama](https://ollama.com/download). To use it, s
 
 Sherpa TTS and STT use bundled models and run locally; no external speech service is required for their default modes. The `PIPER` TTS fallback can use the [Piper CLI](https://github.com/rhasspy/piper) and a separately downloaded [Piper voice](https://huggingface.co/rhasspy/piper-voices). The `AUTO` STT mode may use its configured Whisper API fallback if local recognition fails. Remote transcription can use an [OpenAI-compatible audio transcription endpoint](https://platform.openai.com/docs/guides/speech-to-text) such as [Groq](https://console.groq.com/docs/speech-to-text); `OPENAI_TTS` uses an [OpenAI-compatible speech endpoint](https://platform.openai.com/docs/guides/text-to-speech). Remote modes require network access and suitable endpoint credentials.
 
+## Release and Semantic Versioning
+
+This project follows [Semantic Versioning 2.0.0](https://semver.org/) (`MAJOR.MINOR.PATCH` with optional `-prerelease` and `+build` metadata).
+
+### Checking and Building Specific Versions Locally
+```sh
+# Verify version syntax and print resolved SemVer:
+./gradlew verifySemVer printVersion
+
+# Build with a custom semantic version:
+./gradlew build -Pmod_version=1.0.1
+
+# Build a pre-release candidate:
+./gradlew build -Pmod_version=1.1.0-rc.1
+```
+
+### Automated GitHub Actions Release
+To create and publish an official release with attached `.jar` files:
+1. **Push a Git Tag**:
+   ```sh
+   git tag v1.0.0
+   git push origin v1.0.0
+   ```
+   The `.github/workflows/release.yml` workflow will automatically validate the SemVer format, build the release jar and sources jar, generate release notes from git commits, and publish the GitHub Release.
+2. **Or trigger via GitHub UI (`workflow_dispatch`)**:
+   Navigate to **Actions** -> **Release Mod** -> **Run workflow**, enter the version (e.g. `1.0.1`), select draft/pre-release options, and run.
+
 ## Troubleshooting
 
-- **Wrong Java version:** Point `JAVA_HOME` and the IDE's Gradle JVM to a JDK 21 installation, then rerun `./gradlew --version`.
+- **Wrong Java version:** Point `JAVA_HOME` and the IDE's Gradle JVM to a JDK 25 installation, then rerun `./gradlew --version`.
 - **Gradle dependency resolution fails:** Check network access and retry `./gradlew --refresh-dependencies`.
 - **Ollama replies fall back to scripted text:** Confirm Ollama is running, a model is installed, and the URL/model in the `V` config screen are correct.
 - **No microphone audio:** Check OS microphone permission and input-device selection. Sherpa STT expects client microphone capture; its model runs locally after recording.
