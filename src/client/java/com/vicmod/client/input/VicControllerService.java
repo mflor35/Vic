@@ -65,7 +65,7 @@ public class VicControllerService {
     public static boolean isExternalControllerModLoaded() {
         if (externalControllerModLoaded == null) {
             FabricLoader loader = FabricLoader.getInstance();
-            if (loader.isModLoaded("controlify")) {
+            if (loader.isModLoaded("controlify") || loader.isModLoaded("controllify")) {
                 externalControllerModLoaded = true;
                 externalControllerModName = "Controlify";
             } else if (loader.isModLoaded("midnightcontrols")) {
@@ -88,6 +88,9 @@ public class VicControllerService {
     }
 
     public static boolean isControllerConnected() {
+        if (isExternalControllerModLoaded()) {
+            return true;
+        }
         return activeGamepad != 0 && activeProfile != ControllerProfile.NONE;
     }
 
@@ -111,6 +114,18 @@ public class VicControllerService {
             }
             dpadUpVoiceHeld = false;
             closeActiveGamepad();
+            return;
+        }
+
+        // If Controlify or another external controller mod is loaded, yield all controller handling.
+        // That mod manages input, camera, UI, and binds cleanly through registered Fabric KeyMappings.
+        if (isExternalControllerModLoaded()) {
+            if (controllerDrivingMovement) {
+                releaseMovementKeys(client);
+                controllerDrivingMovement = false;
+            }
+            closeActiveGamepad();
+            dpadUpVoiceHeld = false;
             return;
         }
 

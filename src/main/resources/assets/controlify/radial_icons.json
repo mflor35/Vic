@@ -1,0 +1,11 @@
+{
+  "key.vic.toggle_flashlight": {
+    "model": "vic:item/flashlight"
+  },
+  "key.vic.voice_ptt": {
+    "model": "minecraft:item/echo_shard"
+  },
+  "key.vic.open_config": {
+    "model": "vic:item/vic_core"
+  }
+}

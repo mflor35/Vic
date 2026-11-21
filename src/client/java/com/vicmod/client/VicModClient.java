@@ -43,6 +43,8 @@ public class VicModClient implements ClientModInitializer {
     public static final ModelLayerLocation VIC_DEMON_LAYER = new ModelLayerLocation(Identifier.fromNamespaceAndPath(VicMod.MOD_ID, "vic_demon"), "main");
     public static final ModelLayerLocation SHADOW_WISP_LAYER = new ModelLayerLocation(Identifier.fromNamespaceAndPath(VicMod.MOD_ID, "shadow_wisp"), "main");
 
+    public static final KeyMapping.Category VIC_CATEGORY = KeyMapping.Category.register(Identifier.fromNamespaceAndPath(VicMod.MOD_ID, "vic"));
+
     private static KeyMapping openConfigKey;
     private static KeyMapping voicePttKey;
     private static KeyMapping toggleFlashlightKey;
@@ -63,19 +65,19 @@ public class VicModClient implements ClientModInitializer {
         openConfigKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.vic.open_config",
                 InputConstants.KEY_V,
-                KeyMapping.Category.MISC
+                VIC_CATEGORY
         ));
 
         voicePttKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.vic.voice_ptt",
                 InputConstants.KEY_R,
-                KeyMapping.Category.MISC
+                VIC_CATEGORY
         ));
 
         toggleFlashlightKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
                 "key.vic.toggle_flashlight",
                 InputConstants.KEY_G,
-                KeyMapping.Category.MISC
+                VIC_CATEGORY
         ));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -149,7 +151,7 @@ public class VicModClient implements ClientModInitializer {
                 client.player.playSound(SoundEvents.NOTE_BLOCK_CHIME.value(), 0.5f, 1.5f);
             }
         } else if (pressed && VicVoiceInputService.isRecording()) {
-            String releaseHint = VicControllerService.isControllerConnected() ? "[R / D-Pad Up]" : "[R]";
+            String releaseHint = (VicControllerService.isControllerConnected() || VicControllerService.isExternalControllerModLoaded()) ? "[R / Controller]" : "[R]";
             client.player.sendOverlayMessage(
                     Component.literal("● REC ").withStyle(ChatFormatting.RED, ChatFormatting.BOLD)
                             .append(Component.literal("Listening... Release " + releaseHint + " to send to Vic").withStyle(ChatFormatting.YELLOW))

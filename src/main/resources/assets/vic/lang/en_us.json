@@ -10,5 +10,7 @@
   "key.vic.open_config": "Open Vic Config Menu",
   "key.vic.voice_ptt": "Push to Talk (Speak to Vic)",
   "key.vic.toggle_flashlight": "Quick-Toggle Flashlight",
+  "key.category.vic.vic": "Vic Mod",
+  "key.category.vic": "Vic Mod",
   "category.vic": "Vic Mod"
 }

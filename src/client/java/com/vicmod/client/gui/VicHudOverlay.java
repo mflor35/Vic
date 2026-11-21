@@ -191,16 +191,18 @@ public class VicHudOverlay implements HudElement {
 
         // Row 5 (Conditional): Connected Controller quick-action prompt
         if (hasPad) {
-            String padPrefix = switch (VicControllerService.getActiveProfile()) {
-                case PS5 -> "PS5";
-                case XBOX -> "Xbox";
-                default -> "Pad";
-            };
             if (VicControllerService.isExternalControllerModLoaded()) {
-                padPrefix += " (" + VicControllerService.getExternalControllerModName() + ")";
+                String padHint = VicControllerService.getExternalControllerModName() + ": Binds in Controller Settings";
+                context.text(font, padHint, boxX + 6, currentY, 0xFF55FFFF, true);
+            } else {
+                String padPrefix = switch (VicControllerService.getActiveProfile()) {
+                    case PS5 -> "PS5";
+                    case XBOX -> "Xbox";
+                    default -> "Pad";
+                };
+                String padHint = padPrefix + ": [D-Up] Mic [D-Dn] Light";
+                context.text(font, padHint, boxX + 6, currentY, 0xFF55FFFF, true);
             }
-            String padHint = padPrefix + ": [D-Up] Mic [D-Dn] Light";
-            context.text(font, padHint, boxX + 6, currentY, 0xFF55FFFF, true);
         }
     }
 
