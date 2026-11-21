@@ -43,9 +43,9 @@ While in-game, you can open the **Vic Mod Configuration GUI** at any time by:
 
 From the GUI you can:
 - Switch **AI Mode** between:
-  - **Ollama (Local LLM)** *(Default — connects to your local Ollama server at `http://localhost:11434`, auto-starts `ollama serve` if needed, and auto-detects installed models)*
-  - **Built-in Offline Scripted** (no external AI server required)
-  - **Remote API (OpenAI / Groq)** (connects to any OpenAI-compatible `/v1/chat/completions` endpoint)
+  - **Built-in Offline Scripted** *(Default — runs on any potato PC with 0 extra RAM, 0 extra CPU/GPU, instant responses, full 4-stage dialog, house building, and item synthesis)*
+  - **Ollama (Local LLM)** *(Connects to your local Ollama server at `http://localhost:11434`, auto-starts `ollama serve` if needed, and auto-detects installed models. Automatically throttled with potato-safe limits like 1024 context and max 2 threads)*
+  - **Remote API (OpenAI / Groq)** *(Connects to any OpenAI-compatible `/v1/chat/completions` endpoint)*
 - Click **Models** in Ollama mode to automatically scan `http://localhost:11434/api/tags` and cycle through all models installed on your machine.
 - Toggle **Trial Length (Days)**, **Auto-Spawn Box**, **World Decay**, and **Night Darkness**.
 
@@ -63,7 +63,7 @@ Because Minecraft 1.21.1 and the bundled Sherpa-ONNX TTS/STT voice models share 
 | **Mid-Range / High-End Gaming** *(Recommended)* | **8 GB+ VRAM** (e.g. RTX 3070/4060, RX 7600/7700S, Apple M2/M3 16GB+) | `qwen2.5:7b` or `llama3.1:8b` | ~4.7 – 4.9 GB | Best overall balance. Fits 100% in VRAM alongside Minecraft, reliably triggers `[ACTION:...]` tags (giving items, building structures), and nails Vic's persona transitions across all 4 stages. |
 | **Entry-Level Gaming / Laptops** | **4 – 6 GB VRAM** (e.g. GTX 1650/1660, RTX 3050, RX 6500M) or **Shaders Enabled** | `llama3.2:3b` or `qwen3.5:4b` | ~2.0 – 3.4 GB | Ultra-fast (<0.5s responses) and leaves plenty of VRAM headroom for high render distances or shaders without causing frame drops. |
 | **Low-End / Integrated Graphics (iGPU)** | **No dedicated GPU / 8 – 16 GB System RAM** (e.g. Intel Iris Xe, Radeon 780M/Vega, Steam Deck) | `qwen2.5:1.5b`, `llama3.2:1b`, or `gemma2:2b` | ~0.9 – 1.6 GB | Runs smoothly on CPU or shared iGPU memory with minimal impact on Minecraft tick rate or FPS. |
-| **Potato / Ultra-Low-End Devices** | **< 8 GB RAM** or older dual/quad-core CPUs | **Built-in Scripted Mode** (`/vic provider scripted`) or **Remote API** (`/vic provider openai`) | 0 MB (Local) | Zero extra RAM/VRAM overhead. Scripted mode works 100% offline with full stage progression and item/building actions, or you can offload AI to a fast cloud provider like Groq (`llama-3.3-70b-versatile`). |
+| **Potato / Ultra-Low-End Devices** *(Default)* | **< 8 GB RAM** or older dual/quad-core CPUs (or no GPU) | **Built-in Scripted Mode** *(Default)* or **Remote API** (`/vic provider openai`) | 0 MB (Local) | Default out-of-the-box configuration. Zero extra RAM/VRAM overhead and instant 0ms response time. Works 100% offline with full 4-stage progression, building, and material synthesis. If you want LLMs on a potato, offload to a fast free/cheap cloud provider like Groq (`llama-3.3-70b-versatile`). |
 | **Enthusiast / High-VRAM Workstations** | **12 – 24 GB+ VRAM** or **32 – 64 GB+ Fast Unified/System RAM** | `gemma3:12b`, `qwen2.5:14b`, or `timheinrich2011/verity-3b:latest` | ~8.1 – 19 GB | Maximum nuance and roleplay depth. *(Note: `timheinrich2011/verity-3b:latest` is an unquantized ~19 GB image; only use it if you have enough VRAM/RAM to avoid slow disk swap).* |
 
 To install any of these models before launching the game, run:

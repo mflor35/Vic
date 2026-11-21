@@ -242,8 +242,11 @@ public class VicAiService {
         payload.addProperty("think", false);
 
         JsonObject options = new JsonObject();
-        options.addProperty("temperature", 0.8);
-        options.addProperty("num_predict", 180);
+        options.addProperty("temperature", 0.7);
+        options.addProperty("num_predict", 90);
+        options.addProperty("num_ctx", 1024);
+        int maxThreads = Math.max(1, Math.min(2, Runtime.getRuntime().availableProcessors()));
+        options.addProperty("num_thread", maxThreads);
         payload.add("options", options);
         payload.add("messages", buildChatMessages(systemPrompt, state, userMessage));
 
@@ -369,8 +372,8 @@ public class VicAiService {
 
         JsonObject payload = new JsonObject();
         payload.addProperty("model", config.apiModel);
-        payload.addProperty("temperature", 0.8);
-        payload.addProperty("max_tokens", 180);
+        payload.addProperty("temperature", 0.7);
+        payload.addProperty("max_tokens", 100);
         payload.add("messages", buildChatMessages(systemPrompt, state, userMessage));
 
         try {

@@ -18,10 +18,10 @@ public class VicConfig {
 
     private static volatile VicConfig INSTANCE;
 
-    // Default to local Ollama LLM out of the box
-    // AI Provider: "OLLAMA", "SCRIPTED", or "OPENAI"
-    public String aiProvider = "OLLAMA";
-    public boolean enableAiApi = true;
+    // Default to lightweight built-in scripted dialogue for potato/low-spec compatibility
+    // AI Provider: "SCRIPTED" (0 extra CPU/RAM, instant, runs on any potato PC), "OLLAMA" (local LLM), or "OPENAI" (cloud API)
+    public String aiProvider = "SCRIPTED";
+    public boolean enableAiApi = false;
 
     // Ollama settings
     public String ollamaUrl = "http://localhost:11434";
@@ -62,17 +62,17 @@ public class VicConfig {
     public boolean enableController = true;
     public float controllerSensitivity = 8.0f;
     public float controllerDeadzone = 0.18f;
-    public int requestTimeoutSeconds = 20;
+    public int requestTimeoutSeconds = 8;
 
     public String getEffectiveProvider() {
         if (aiProvider == null || aiProvider.isBlank()) {
-            return "OLLAMA";
+            return "SCRIPTED";
         }
         String upper = aiProvider.trim().toUpperCase();
         if ("OLLAMA".equals(upper) || "OPENAI".equals(upper) || "SCRIPTED".equals(upper)) {
             return upper;
         }
-        return "OLLAMA";
+        return "SCRIPTED";
     }
 
     public void setProvider(String provider) {
@@ -188,8 +188,8 @@ public class VicConfig {
                 }
                 boolean migrated = false;
                 if (INSTANCE.aiProvider == null || INSTANCE.aiProvider.isBlank()) {
-                    INSTANCE.aiProvider = "OLLAMA";
-                    INSTANCE.enableAiApi = true;
+                    INSTANCE.aiProvider = "SCRIPTED";
+                    INSTANCE.enableAiApi = false;
                     migrated = true;
                 }
                 if (INSTANCE.ttsMode == null || INSTANCE.ttsMode.isBlank() || "AUTO".equalsIgnoreCase(INSTANCE.ttsMode)) {
