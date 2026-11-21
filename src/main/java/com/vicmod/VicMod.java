@@ -313,9 +313,11 @@ public class VicMod implements ModInitializer {
                                 String provider = cfg.getEffectiveProvider();
                                 String activeModel = switch (provider) {
                                     case "OLLAMA" -> cfg.ollamaModel + " @ " + cfg.ollamaUrl;
-                                    case "OPENAI" -> cfg.apiModel + " @ " + cfg.apiEndpoint;
-                                    default -> "Built-in Scripted Dialogue";
+                                    case "SCRIPTED" -> "Built-in Offline Scripted Dialogue";
+                                    default -> cfg.apiModel + " @ " + cfg.apiEndpoint;
                                 };
+                                String keyInfo = ("SCRIPTED".equals(provider) || "OLLAMA".equals(provider)) ? ""
+                                        : (" | Key: " + (cfg.apiKey != null && !cfg.apiKey.isBlank() ? "Configured" : "Not Set (Scripted Fallback)"));
                                 ctx.getSource().sendSuccess(() -> Component.literal(
                                         "=== Vic Mod Status ===\n" +
                                                 "Countdown Active: " + state.isCountdownActive() + "\n" +
@@ -324,7 +326,7 @@ public class VicMod implements ModInitializer {
                                                 "Persona: " + cfg.getEffectivePersona().getDisplayName() + "\n" +
                                                 "Demon Awakened: " + state.isDemonAwakened() + " | Defeated: " + state.isDemonDefeated() + "\n" +
                                                 "Conversation Memory: " + state.getConversationMemory().size() + " / " + VicWorldState.MAX_MEMORY_TURNS + " turns\n" +
-                                                "AI Provider: " + provider + " (" + activeModel + ")\n" +
+                                                "AI Provider: " + provider + " (" + activeModel + keyInfo + ")\n" +
                                                 "TTS Voice: " + cfg.getEffectiveTtsMode() + " | Mic STT: " + cfg.getEffectiveSttMode() + "\n" +
                                                 "Tip: Hold [R] to speak to Vic, or press [V] / run /vicconfig!"
                                 ).withStyle(ChatFormatting.YELLOW), false);
@@ -510,7 +512,35 @@ public class VicMod implements ModInitializer {
                                          VicConfig cfg = VicConfig.get();
                                          cfg.setProvider(mode);
                                          VicConfig.save();
-                                         ctx.getSource().sendSuccess(() -> Component.literal("Vic AI provider switched to: " + cfg.getEffectiveProvider()).withStyle(ChatFormatting.GREEN), false);
+                                         ctx.getSource().sendSuccess(() -> Component.literal("Vic AI provider switched to: " + cfg.getEffectiveProvider() + " (Model: " + cfg.apiModel + " @ " + cfg.apiEndpoint + ")").withStyle(ChatFormatting.GREEN), false);
+                                         return 1;
+                                     })))
+                     .then(Commands.literal("model")
+                             .then(Commands.argument("modelName", StringArgumentType.greedyString())
+                                     .executes(ctx -> {
+                                         String modelName = StringArgumentType.getString(ctx, "modelName").trim();
+                                         VicConfig cfg = VicConfig.get();
+                                         if ("OLLAMA".equals(cfg.getEffectiveProvider())) {
+                                             cfg.ollamaModel = modelName;
+                                         } else {
+                                             cfg.apiModel = modelName;
+                                         }
+                                         VicConfig.save();
+                                         ctx.getSource().sendSuccess(() -> Component.literal("Vic active model set to: " + modelName + " (Provider: " + cfg.getEffectiveProvider() + ")").withStyle(ChatFormatting.GREEN), false);
+                                         return 1;
+                                     })))
+                     .then(Commands.literal("endpoint")
+                             .then(Commands.argument("url", StringArgumentType.greedyString())
+                                     .executes(ctx -> {
+                                         String url = StringArgumentType.getString(ctx, "url").trim();
+                                         VicConfig cfg = VicConfig.get();
+                                         if ("OLLAMA".equals(cfg.getEffectiveProvider())) {
+                                             cfg.ollamaUrl = com.vicmod.ai.VicAiService.normalizeOllamaBaseUrl(url);
+                                         } else {
+                                             cfg.apiEndpoint = url;
+                                         }
+                                         VicConfig.save();
+                                         ctx.getSource().sendSuccess(() -> Component.literal("Vic AI endpoint set to: " + url + " (Provider: " + cfg.getEffectiveProvider() + ")").withStyle(ChatFormatting.GREEN), false);
                                          return 1;
                                      })))
                      .then(Commands.literal("config")
@@ -629,9 +659,11 @@ public class VicMod implements ModInitializer {
                                          String key = StringArgumentType.getString(ctx, "key").trim();
                                          VicConfig cfg = VicConfig.get();
                                          cfg.apiKey = key;
-                                         cfg.setProvider(key.isEmpty() ? "SCRIPTED" : "OPENAI");
+                                         if ("SCRIPTED".equals(cfg.getEffectiveProvider()) && !key.isEmpty()) {
+                                             cfg.setProvider("OPENAI");
+                                         }
                                          VicConfig.save();
-                                         ctx.getSource().sendSuccess(() -> Component.literal("Vic AI API key updated and OpenAI/Groq mode enabled! Endpoint: " + cfg.apiEndpoint).withStyle(ChatFormatting.GREEN), false);
+                                         ctx.getSource().sendSuccess(() -> Component.literal("Vic AI API key updated for " + cfg.getEffectiveProvider() + "! Model: " + cfg.apiModel + " (" + cfg.apiEndpoint + ")").withStyle(ChatFormatting.GREEN), false);
                                          return 1;
                                      })))
              );

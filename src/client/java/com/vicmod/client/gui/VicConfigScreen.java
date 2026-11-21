@@ -88,17 +88,24 @@ public class VicConfigScreen extends Screen {
         // 1. AI Provider Cycle Button
         this.providerButton = Button.builder(getProviderButtonText(), btn -> {
             this.aiProvider = switch (this.aiProvider) {
-                case "SCRIPTED" -> "OLLAMA";
-                case "OLLAMA" -> "OPENAI";
-                default -> "SCRIPTED";
+                case "OPENAI" -> "GEMINI";
+                case "GEMINI" -> "CLAUDE";
+                case "CLAUDE" -> "GROQ";
+                case "GROQ" -> "DEEPSEEK";
+                case "DEEPSEEK" -> "OPENROUTER";
+                case "OPENROUTER" -> "MISTRAL";
+                case "MISTRAL" -> "OLLAMA";
+                case "OLLAMA" -> "SCRIPTED";
+                default -> "OPENAI";
             };
+            applyProviderPresetDefaults(this.aiProvider);
             btn.setMessage(getProviderButtonText());
             updateFieldVisibility();
             if ("OLLAMA".equals(this.aiProvider) && this.detectedOllamaModels.isEmpty()) {
                 scanAndCycleOllamaModels(false);
             }
         }).bounds(leftColX, 20, 310, 20)
-          .tooltip(Tooltip.create(Component.literal("Switch between Built-in Scripted dialogue, local Ollama LLM, or remote OpenAI-compatible API")))
+          .tooltip(Tooltip.create(Component.literal("Switch between OpenAI (Default), Gemini, Claude, Groq, DeepSeek, OpenRouter, Mistral, Ollama, or Scripted dialogue")))
           .build();
         this.addRenderableWidget(this.providerButton);
 
@@ -296,7 +303,8 @@ public class VicConfigScreen extends Screen {
 
     private void updateFieldVisibility() {
         boolean isOllama = "OLLAMA".equals(this.aiProvider);
-        boolean isOpenAi = "OPENAI".equals(this.aiProvider);
+        boolean isScripted = "SCRIPTED".equals(this.aiProvider);
+        boolean isRemote = !isOllama && !isScripted;
 
         this.ollamaUrlField.setVisible(isOllama);
         this.ollamaUrlField.active = isOllama;
@@ -309,13 +317,46 @@ public class VicConfigScreen extends Screen {
         this.scanOllamaButton.visible = isOllama;
         this.scanOllamaButton.active = isOllama;
 
-        this.apiEndpointField.setVisible(isOpenAi);
-        this.apiEndpointField.active = isOpenAi;
-        this.apiEndpointField.setEditable(isOpenAi);
+        this.apiEndpointField.setVisible(isRemote);
+        this.apiEndpointField.active = isRemote;
+        this.apiEndpointField.setEditable(isRemote);
 
-        this.apiModelField.setVisible(isOpenAi);
-        this.apiModelField.active = isOpenAi;
-        this.apiModelField.setEditable(isOpenAi);
+        this.apiModelField.setVisible(isRemote);
+        this.apiModelField.active = isRemote;
+        this.apiModelField.setEditable(isRemote);
+    }
+
+    private void applyProviderPresetDefaults(String provider) {
+        switch (provider) {
+            case "OPENAI" -> {
+                this.apiEndpointField.setValue("https://api.openai.com/v1/chat/completions");
+                this.apiModelField.setValue("gpt-4o-mini");
+            }
+            case "GEMINI" -> {
+                this.apiEndpointField.setValue("https://generativelanguage.googleapis.com/v1beta/models");
+                this.apiModelField.setValue("gemini-1.5-flash");
+            }
+            case "CLAUDE" -> {
+                this.apiEndpointField.setValue("https://api.anthropic.com/v1/messages");
+                this.apiModelField.setValue("claude-3-5-haiku-20241022");
+            }
+            case "GROQ" -> {
+                this.apiEndpointField.setValue("https://api.groq.com/openai/v1/chat/completions");
+                this.apiModelField.setValue("llama-3.3-70b-versatile");
+            }
+            case "DEEPSEEK" -> {
+                this.apiEndpointField.setValue("https://api.deepseek.com/chat/completions");
+                this.apiModelField.setValue("deepseek-chat");
+            }
+            case "OPENROUTER" -> {
+                this.apiEndpointField.setValue("https://openrouter.ai/api/v1/chat/completions");
+                this.apiModelField.setValue("meta-llama/llama-3.3-70b-instruct");
+            }
+            case "MISTRAL" -> {
+                this.apiEndpointField.setValue("https://api.mistral.ai/v1/chat/completions");
+                this.apiModelField.setValue("mistral-small-latest");
+            }
+        }
     }
 
     private void applyTransientVoiceConfig() {
@@ -366,13 +407,25 @@ public class VicConfigScreen extends Screen {
 
     private Component getProviderButtonText() {
         ChatFormatting color = switch (this.aiProvider) {
-            case "OLLAMA" -> ChatFormatting.AQUA;
             case "OPENAI" -> ChatFormatting.GREEN;
+            case "GEMINI" -> ChatFormatting.BLUE;
+            case "CLAUDE" -> ChatFormatting.GOLD;
+            case "GROQ" -> ChatFormatting.LIGHT_PURPLE;
+            case "DEEPSEEK" -> ChatFormatting.AQUA;
+            case "OPENROUTER" -> ChatFormatting.DARK_AQUA;
+            case "MISTRAL" -> ChatFormatting.RED;
+            case "OLLAMA" -> ChatFormatting.DARK_GREEN;
             default -> ChatFormatting.YELLOW;
         };
         String label = switch (this.aiProvider) {
+            case "OPENAI" -> "OpenAI (Default)";
+            case "GEMINI" -> "Google Gemini";
+            case "CLAUDE" -> "Anthropic Claude";
+            case "GROQ" -> "Groq (Ultra-Fast)";
+            case "DEEPSEEK" -> "DeepSeek";
+            case "OPENROUTER" -> "OpenRouter";
+            case "MISTRAL" -> "Mistral AI";
             case "OLLAMA" -> "Ollama (Local LLM)";
-            case "OPENAI" -> "Remote API (OpenAI / Groq)";
             default -> "Built-in Offline Scripted";
         };
         return Component.literal("AI Mode: ").append(Component.literal(label).withStyle(color, ChatFormatting.BOLD));
@@ -475,10 +528,7 @@ public class VicConfigScreen extends Screen {
         if ("OLLAMA".equals(this.aiProvider)) {
             context.text(this.font, "Ollama Base URL:", leftColX, 42, 0xFFCCCCCC, true);
             context.text(this.font, "Ollama Model:", rightColX, 42, 0xFFCCCCCC, true);
-        } else if ("OPENAI".equals(this.aiProvider)) {
-            context.text(this.font, "API Endpoint URL:", leftColX, 42, 0xFFCCCCCC, true);
-            context.text(this.font, "Model Name:", rightColX, 42, 0xFFCCCCCC, true);
-        } else {
+        } else if ("SCRIPTED".equals(this.aiProvider)) {
             context.centeredText(
                     this.font,
                     Component.literal("Using built-in stage-aware dialogue (no external AI server required)."),
@@ -486,10 +536,23 @@ public class VicConfigScreen extends Screen {
                     56,
                     0xFFAAAAAA
             );
+        } else {
+            String endpointLabel = switch (this.aiProvider) {
+                case "GEMINI" -> "Gemini API Base URL:";
+                case "CLAUDE" -> "Claude API Endpoint:";
+                default -> "API Endpoint URL:";
+            };
+            String modelLabel = switch (this.aiProvider) {
+                case "GEMINI" -> "Gemini Model (e.g. gemini-1.5-flash):";
+                case "CLAUDE" -> "Claude Model (e.g. claude-3-5-haiku):";
+                default -> "API Model ID:";
+            };
+            context.text(this.font, endpointLabel, leftColX, 42, 0xFFCCCCCC, true);
+            context.text(this.font, modelLabel, rightColX, 42, 0xFFCCCCCC, true);
         }
 
         // Section 2: Credentials & Voice
-        context.text(this.font, "API Key (Groq / OpenAI / Whisper):", leftColX, 74, 0xFFCCCCCC, true);
+        context.text(this.font, "API Key (OpenAI / Gemini / Claude / etc.):", leftColX, 74, 0xFFCCCCCC, true);
         context.text(this.font, "OpenAI TTS Voice (if used):", rightColX, 74, 0xFFCCCCCC, true);
 
         // Section 3: Piper Model Path & Personality Profile

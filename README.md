@@ -34,7 +34,7 @@ Once finished, copy `build/libs/vic-1.0.0.jar` into your Minecraft 26.x Fabric p
 
 ---
 
-## In-Game Configuration & Ollama Support
+## In-Game Configuration & AI Providers
 
 ### 1. Open the In-Game Config Menu
 While in-game, you can open the **Vic Mod Configuration GUI** at any time by:
@@ -43,17 +43,41 @@ While in-game, you can open the **Vic Mod Configuration GUI** at any time by:
 
 From the GUI you can:
 - Switch **AI Mode** between:
-  - **Built-in Offline Scripted** *(Default — runs on any potato PC with 0 extra RAM, 0 extra CPU/GPU, instant responses, full 4-stage dialog, house building, and item synthesis)*
-  - **Ollama (Local LLM)** *(Connects to your local Ollama server at `http://localhost:11434`, auto-starts `ollama serve` if needed, and auto-detects installed models. Automatically throttled with potato-safe limits like 1024 context and max 2 threads)*
-  - **Remote API (OpenAI / Groq)** *(Connects to any OpenAI-compatible `/v1/chat/completions` endpoint)*
+  - **OpenAI / OpenAPI (Default)** *(Standard OpenAI protocol, default model `gpt-4o-mini`, also compatible with any custom `/v1/chat/completions` endpoint)*
+  - **Google Gemini** *(Native Google Gemini API: `gemini-1.5-flash`, `gemini-2.0-flash`, `gemini-1.5-pro` using your Google API key)*
+  - **Anthropic Claude** *(Native Anthropic API: `claude-3-5-haiku-20241022`, `claude-3-7-sonnet-20250219` using your Anthropic API key)*
+  - **Groq** *(Ultra-fast, generous free tier running `llama-3.3-70b-versatile`)*
+  - **DeepSeek** *(Fast & affordable `deepseek-chat` / `deepseek-reasoner`)*
+  - **OpenRouter** *(Unified gateway to access Claude, Gemini, GPT-4o, and hundreds of models under a single API key)*
+  - **Mistral AI** *(Native European open-weight powerhouse: `mistral-small-latest`, `mistral-large-latest`)*
+  - **Ollama (Local LLM)** *(Connects to your local Ollama server at `http://localhost:11434`, auto-starts `ollama serve` if needed, and auto-detects installed models)*
+  - **Built-in Offline Scripted** *(Runs 100% offline with 0 extra RAM, 0 extra CPU/GPU, instant responses, full 4-stage dialog, house building, and item synthesis)*
+- Set your **API Key** once (works across OpenAI, Gemini, Claude, Groq, DeepSeek, etc.) or run `/vic apikey <KEY>`.
+- If an API key is not yet set, Vic automatically uses built-in scripted dialogue so gameplay is never interrupted or frozen!
 - Click **Models** in Ollama mode to automatically scan `http://localhost:11434/api/tags` and cycle through all models installed on your machine.
 - Toggle **Trial Length (Days)**, **Auto-Spawn Box**, **World Decay**, and **Night Darkness**.
 
-### 2. Ollama Chat Commands & Recommended Models
+### 2. Supported Consumer AI Providers & Setup
+
+| Provider | Default Model | Endpoint | How to Use |
+| :--- | :--- | :--- | :--- |
+| **OpenAI / OpenAPI** *(Default)* | `gpt-4o-mini` | `https://api.openai.com/v1/chat/completions` | Run `/vic provider openai`, set key with `/vic apikey sk-...`. Supports `gpt-4o`, `gpt-4o-mini`, `o3-mini`. |
+| **Google Gemini** | `gemini-1.5-flash` | `https://generativelanguage.googleapis.com/v1beta/models` | Run `/vic provider gemini`, set key with `/vic apikey AIza...`. Supports `gemini-1.5-flash`, `gemini-2.0-flash`. |
+| **Anthropic Claude** | `claude-3-5-haiku-20241022` | `https://api.anthropic.com/v1/messages` | Run `/vic provider claude`, set key with `/vic apikey sk-ant-...`. Supports `claude-3-5-haiku`, `claude-3-7-sonnet`. |
+| **Groq (Ultra-Fast)** | `llama-3.3-70b-versatile` | `https://api.groq.com/openai/v1/chat/completions` | Run `/vic provider groq`, set key with `/vic apikey gsk_...`. Delivers blazing fast ~300+ token/s responses. |
+| **DeepSeek** | `deepseek-chat` | `https://api.deepseek.com/chat/completions` | Run `/vic provider deepseek`, set key with `/vic apikey sk-...`. Low latency and high intelligence. |
+| **OpenRouter** | `meta-llama/llama-3.3-70b-instruct` | `https://openrouter.ai/api/v1/chat/completions` | Run `/vic provider openrouter`, set key with `/vic apikey sk-or-...`. Access every model in the world in one place. |
+| **Mistral AI** | `mistral-small-latest` | `https://api.mistral.ai/v1/chat/completions` | Run `/vic provider mistral`, set key with `/vic apikey ...`. |
+| **Ollama (Local LLM)** | `llama3.1:8b` | `http://localhost:11434` | Run `/vic provider ollama`, no API key needed! Scan with `/vic ollama list`. |
+| **Built-in Scripted** | Built-in Lore Engine | Local in-memory | Run `/vic provider scripted`. 100% offline, zero setup, runs on any potato PC. |
+
+### 3. Ollama Chat Commands & Recommended Models
 You can also manage Ollama models directly from chat:
 - `/vic ollama list` — Scans your local Ollama instance and lists all installed models with clickable **`[Use Model]`** buttons in chat.
 - `/vic ollama <model>` — Switches to Ollama mode and selects `<model>` (e.g. `/vic ollama llama3.2:3b` or `/vic ollama qwen2.5:7b`).
 - `/vic ollama url <url>` — Changes the Ollama server URL (default `http://localhost:11434`).
+- `/vic model <modelName>` — Quickly sets the active model for the current provider (e.g. `/vic model gpt-4o` or `/vic model gemini-2.0-flash`).
+- `/vic endpoint <url>` — Quickly changes the API endpoint URL for the current provider.
 
 #### Choosing the Best Model for Your Hardware
 Because Minecraft 1.21.1 and the bundled Sherpa-ONNX TTS/STT voice models share your GPU and RAM, pick an Ollama model that fits comfortably inside your available VRAM alongside the game:
@@ -161,14 +185,16 @@ Create a new Singleplayer world with **Allow Commands (Cheats) ON**:
 - `/vic say <message>` — Send a message directly to Vic.
 - `/vic ollama list` — List locally installed Ollama models with clickable selection buttons.
 - `/vic ollama <model>` — Use a specific local Ollama model.
-- `/vic provider <scripted|ollama|openai>` — Switch the AI backend.
+- `/vic provider <openai|gemini|claude|groq|deepseek|openrouter|mistral|ollama|scripted>` — Switch the AI backend (OpenAI is default).
+- `/vic model <modelName>` — Change the active AI model (e.g. `gpt-4o-mini`, `gemini-1.5-flash`, `claude-3-5-haiku-20241022`, `llama-3.3-70b-versatile`).
+- `/vic endpoint <url>` — Change the active API endpoint URL.
+- `/vic apikey <key>` — Save and enable an API key for cloud AI providers (OpenAI, Gemini, Claude, Groq, DeepSeek, OpenRouter, Mistral).
 - `/vic config <countdownDays|worldDecay|trueDarkness|autoSpawnBox> <value>` — Update gameplay settings via command.
 - `/vic setkarma <value>` *(OP level 2)* — Set Karma between `-100` and `100` to test different behavioral stages.
 - `/vic setday <day>` *(OP level 2)* — Jump to a specific day (`1`–`30`):
   - `/vic setday 1` — Reset the trial countdown to Day 1; if the Vic Demon is active, restore Vic.
   - `/vic setday 3` — Test Stage 2+ world decay (wildlife vanishing, stalking behavior, and true darkness at night).
   - `/vic setday 6` — Immediately expire the 5-day trial and trigger the **Vic Demon** (`vic:vic_demon`) awakening.
-- `/vic apikey <key>` — Save and enable an API key for OpenAI/Groq chat responses.
 - `/vic profile <classic|stoic|melancholy|aggressive|analytical>` — Change Vic's AI personality profile.
 - `/vic task [start <shelter|iron|food> | clear]` — Manage active multi-step survival tasks.
 - `/vic truce` *(OP level 2)* — Temporarily stabilize Vic and pause the trial clock for 1 in-game day.

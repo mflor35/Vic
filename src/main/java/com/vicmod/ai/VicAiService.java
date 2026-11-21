@@ -159,11 +159,23 @@ public class VicAiService {
         String provider = config.getEffectiveProvider();
         if ("OLLAMA".equals(provider)) {
             queryOllamaLlm(player, vic, state, stage, rawMessage);
-        } else if ("OPENAI".equals(provider) && config.apiKey != null && !config.apiKey.isBlank()) {
-            queryExternalLlm(player, vic, state, stage, rawMessage);
-        } else {
+        } else if ("SCRIPTED".equals(provider)) {
             String response = generateScriptedResponse(player, vic, state, stage, rawMessage);
             processAndDeliverResponse(player, vic, state, stage, rawMessage, response);
+        } else {
+            String key = config.getEffectiveApiKey(provider);
+            if (key != null && !key.isBlank()) {
+                if ("GEMINI".equals(provider)) {
+                    queryGeminiLlm(player, vic, state, stage, rawMessage);
+                } else if ("CLAUDE".equals(provider)) {
+                    queryClaudeLlm(player, vic, state, stage, rawMessage);
+                } else {
+                    queryExternalLlm(player, vic, state, stage, rawMessage);
+                }
+            } else {
+                String response = generateScriptedResponse(player, vic, state, stage, rawMessage);
+                processAndDeliverResponse(player, vic, state, stage, rawMessage, response);
+            }
         }
     }
 
@@ -386,6 +398,10 @@ public class VicAiService {
             if (config.apiKey != null && !config.apiKey.isBlank()) {
                 reqBuilder.header("Authorization", "Bearer " + config.apiKey.trim());
             }
+            if (config.apiEndpoint != null && config.apiEndpoint.contains("openrouter.ai")) {
+                reqBuilder.header("HTTP-Referer", "https://github.com/vicmod");
+                reqBuilder.header("X-Title", "Vic Mod");
+            }
 
             CompletableFuture<HttpResponse<String>> future = HTTP_CLIENT.sendAsync(reqBuilder.build(), HttpResponse.BodyHandlers.ofString());
             future.whenComplete((response, error) -> {
@@ -428,6 +444,216 @@ public class VicAiService {
         } catch (Exception e) {
             VicMod.LOGGER.warn("Could not create external LLM request (provider=OPENAI, host={}, model={}, cause={}); using scripted response",
                     endpointHost(config.apiEndpoint), config.apiModel, failureType(e));
+            String fallback = generateScriptedResponse(player, vic, state, stage, userMessage);
+            processAndDeliverResponse(player, vic, state, stage, userMessage, fallback);
+        }
+    }
+
+    private static void queryGeminiLlm(ServerPlayer player, VicEntity vic, VicWorldState state, int stage, String userMessage) {
+        VicConfig config = VicConfig.get();
+        String systemPrompt = buildSystemPrompt(player, vic, state, stage, config.countdownDays);
+        String key = config.getEffectiveApiKey("GEMINI");
+
+        String model = config.apiModel != null && !config.apiModel.isBlank() ? config.apiModel : "gemini-1.5-flash";
+        String endpoint = config.apiEndpoint != null && !config.apiEndpoint.isBlank() ? config.apiEndpoint.trim() : "https://generativelanguage.googleapis.com/v1beta/models";
+        while (endpoint.endsWith("/")) {
+            endpoint = endpoint.substring(0, endpoint.length() - 1);
+        }
+        String targetUrl;
+        if (endpoint.contains(":generateContent")) {
+            targetUrl = endpoint;
+        } else if (endpoint.contains("/models")) {
+            targetUrl = endpoint + "/" + model + ":generateContent";
+        } else {
+            targetUrl = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent";
+        }
+
+        JsonObject payload = new JsonObject();
+        JsonObject systemInstruction = new JsonObject();
+        JsonArray sysParts = new JsonArray();
+        JsonObject sysPart = new JsonObject();
+        sysPart.addProperty("text", systemPrompt);
+        sysParts.add(sysPart);
+        systemInstruction.add("parts", sysParts);
+        payload.add("systemInstruction", systemInstruction);
+
+        JsonArray contents = new JsonArray();
+        for (VicWorldState.ConversationTurn turn : state.getConversationMemory()) {
+            if (turn.playerMessage() != null && !turn.playerMessage().isBlank()) {
+                JsonObject u = new JsonObject();
+                u.addProperty("role", "user");
+                JsonArray uParts = new JsonArray();
+                JsonObject uText = new JsonObject();
+                uText.addProperty("text", turn.playerMessage());
+                uParts.add(uText);
+                u.add("parts", uParts);
+                contents.add(u);
+            }
+            if (turn.vicResponse() != null && !turn.vicResponse().isBlank()) {
+                JsonObject m = new JsonObject();
+                m.addProperty("role", "model");
+                JsonArray mParts = new JsonArray();
+                JsonObject mText = new JsonObject();
+                mText.addProperty("text", turn.vicResponse());
+                mParts.add(mText);
+                m.add("parts", mParts);
+                contents.add(m);
+            }
+        }
+        JsonObject cur = new JsonObject();
+        cur.addProperty("role", "user");
+        JsonArray curParts = new JsonArray();
+        JsonObject curText = new JsonObject();
+        curText.addProperty("text", userMessage);
+        curParts.add(curText);
+        cur.add("parts", curParts);
+        contents.add(cur);
+        payload.add("contents", contents);
+
+        JsonObject genConfig = new JsonObject();
+        genConfig.addProperty("temperature", 0.7);
+        genConfig.addProperty("maxOutputTokens", 120);
+        payload.add("generationConfig", genConfig);
+
+        try {
+            HttpRequest.Builder reqBuilder = HttpRequest.newBuilder()
+                    .uri(URI.create(targetUrl))
+                    .timeout(Duration.ofSeconds(Math.max(4, config.requestTimeoutSeconds)))
+                    .header("Content-Type", "application/json")
+                    .header("x-goog-api-key", key)
+                    .POST(HttpRequest.BodyPublishers.ofString(payload.toString()));
+
+            CompletableFuture<HttpResponse<String>> future = HTTP_CLIENT.sendAsync(reqBuilder.build(), HttpResponse.BodyHandlers.ofString());
+            future.whenComplete((response, error) -> {
+                net.minecraft.server.MinecraftServer server = player.level() != null ? player.level().getServer() : null;
+                if (server == null || server.isStopped() || player.isRemoved()) {
+                    PENDING_QUERIES.remove(player.getUUID());
+                    return;
+                }
+                server.execute(() -> {
+                    if (error != null || response == null || response.statusCode() >= 400) {
+                        VicMod.LOGGER.warn("Gemini LLM request failed (model={}, status={}, cause={}); using scripted response",
+                                model, response != null ? response.statusCode() : "N/A", failureType(error));
+                        String fallback = generateScriptedResponse(player, vic, state, stage, userMessage);
+                        processAndDeliverResponse(player, vic, state, stage, userMessage, fallback);
+                        return;
+                    }
+                    try {
+                        JsonObject root = JsonParser.parseString(response.body()).getAsJsonObject();
+                        JsonArray candidates = root.getAsJsonArray("candidates");
+                        if (candidates != null && !candidates.isEmpty()) {
+                            JsonObject content = candidates.get(0).getAsJsonObject().getAsJsonObject("content");
+                            if (content != null) {
+                                JsonArray parts = content.getAsJsonArray("parts");
+                                if (parts != null && !parts.isEmpty()) {
+                                    JsonElement textEl = parts.get(0).getAsJsonObject().get("text");
+                                    if (textEl != null && !textEl.isJsonNull()) {
+                                        processAndDeliverResponse(player, vic, state, stage, userMessage, stripThinkBlocks(textEl.getAsString()).trim());
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        VicMod.LOGGER.warn("Failed to parse Gemini response (model={}, cause={}); using scripted response", model, failureType(e));
+                    }
+                    String fallback = generateScriptedResponse(player, vic, state, stage, userMessage);
+                    processAndDeliverResponse(player, vic, state, stage, userMessage, fallback);
+                });
+            });
+        } catch (Exception e) {
+            VicMod.LOGGER.warn("Could not create Gemini LLM request (target={}, model={}, cause={}); using scripted response",
+                    targetUrl, model, failureType(e));
+            String fallback = generateScriptedResponse(player, vic, state, stage, userMessage);
+            processAndDeliverResponse(player, vic, state, stage, userMessage, fallback);
+        }
+    }
+
+    private static void queryClaudeLlm(ServerPlayer player, VicEntity vic, VicWorldState state, int stage, String userMessage) {
+        VicConfig config = VicConfig.get();
+        String systemPrompt = buildSystemPrompt(player, vic, state, stage, config.countdownDays);
+        String key = config.getEffectiveApiKey("CLAUDE");
+        String model = config.apiModel != null && !config.apiModel.isBlank() ? config.apiModel : "claude-3-5-haiku-20241022";
+        String targetUrl = config.apiEndpoint != null && config.apiEndpoint.contains("anthropic.com")
+                ? config.apiEndpoint.trim()
+                : "https://api.anthropic.com/v1/messages";
+
+        JsonObject payload = new JsonObject();
+        payload.addProperty("model", model);
+        payload.addProperty("max_tokens", 120);
+        payload.addProperty("temperature", 0.7);
+        payload.addProperty("system", systemPrompt);
+
+        JsonArray messages = new JsonArray();
+        for (VicWorldState.ConversationTurn turn : state.getConversationMemory()) {
+            if (turn.playerMessage() != null && !turn.playerMessage().isBlank()) {
+                JsonObject pastUser = new JsonObject();
+                pastUser.addProperty("role", "user");
+                pastUser.addProperty("content", turn.playerMessage());
+                messages.add(pastUser);
+            }
+            if (turn.vicResponse() != null && !turn.vicResponse().isBlank()) {
+                JsonObject pastAssistant = new JsonObject();
+                pastAssistant.addProperty("role", "assistant");
+                pastAssistant.addProperty("content", turn.vicResponse());
+                messages.add(pastAssistant);
+            }
+        }
+        JsonObject curMsg = new JsonObject();
+        curMsg.addProperty("role", "user");
+        curMsg.addProperty("content", userMessage);
+        messages.add(curMsg);
+        payload.add("messages", messages);
+
+        try {
+            HttpRequest.Builder reqBuilder = HttpRequest.newBuilder()
+                    .uri(URI.create(targetUrl))
+                    .timeout(Duration.ofSeconds(Math.max(4, config.requestTimeoutSeconds)))
+                    .header("Content-Type", "application/json")
+                    .header("x-api-key", key)
+                    .header("anthropic-version", "2023-06-01")
+                    .POST(HttpRequest.BodyPublishers.ofString(payload.toString()));
+
+            CompletableFuture<HttpResponse<String>> future = HTTP_CLIENT.sendAsync(reqBuilder.build(), HttpResponse.BodyHandlers.ofString());
+            future.whenComplete((response, error) -> {
+                net.minecraft.server.MinecraftServer server = player.level() != null ? player.level().getServer() : null;
+                if (server == null || server.isStopped() || player.isRemoved()) {
+                    PENDING_QUERIES.remove(player.getUUID());
+                    return;
+                }
+                server.execute(() -> {
+                    if (error != null || response == null || response.statusCode() >= 400) {
+                        VicMod.LOGGER.warn("Claude LLM request failed (model={}, status={}, cause={}); using scripted response",
+                                model, response != null ? response.statusCode() : "N/A", failureType(error));
+                        String fallback = generateScriptedResponse(player, vic, state, stage, userMessage);
+                        processAndDeliverResponse(player, vic, state, stage, userMessage, fallback);
+                        return;
+                    }
+                    try {
+                        JsonObject root = JsonParser.parseString(response.body()).getAsJsonObject();
+                        JsonArray contentArr = root.getAsJsonArray("content");
+                        if (contentArr != null && !contentArr.isEmpty()) {
+                            for (JsonElement el : contentArr) {
+                                if (el.isJsonObject()) {
+                                    JsonObject block = el.getAsJsonObject();
+                                    if ("text".equals(block.get("type").getAsString())) {
+                                        String reply = block.get("text").getAsString();
+                                        processAndDeliverResponse(player, vic, state, stage, userMessage, stripThinkBlocks(reply).trim());
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    } catch (Exception e) {
+                        VicMod.LOGGER.warn("Failed to parse Claude response (model={}, cause={}); using scripted response", model, failureType(e));
+                    }
+                    String fallback = generateScriptedResponse(player, vic, state, stage, userMessage);
+                    processAndDeliverResponse(player, vic, state, stage, userMessage, fallback);
+                });
+            });
+        } catch (Exception e) {
+            VicMod.LOGGER.warn("Could not create Claude LLM request (target={}, model={}, cause={}); using scripted response",
+                    targetUrl, model, failureType(e));
             String fallback = generateScriptedResponse(player, vic, state, stage, userMessage);
             processAndDeliverResponse(player, vic, state, stage, userMessage, fallback);
         }

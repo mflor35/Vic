@@ -18,19 +18,19 @@ public class VicConfig {
 
     private static volatile VicConfig INSTANCE;
 
-    // Default to lightweight built-in scripted dialogue for potato/low-spec compatibility
-    // AI Provider: "SCRIPTED" (0 extra CPU/RAM, instant, runs on any potato PC), "OLLAMA" (local LLM), or "OPENAI" (cloud API)
-    public String aiProvider = "SCRIPTED";
-    public boolean enableAiApi = false;
+    // Default to OpenAI / OpenAI-compatible API out of the box ("OPENAI")
+    // AI Provider: "OPENAI" (Default), "GEMINI", "CLAUDE", "GROQ", "DEEPSEEK", "OPENROUTER", "MISTRAL", "OLLAMA", or "SCRIPTED"
+    public String aiProvider = "OPENAI";
+    public boolean enableAiApi = true;
 
     // Ollama settings
     public String ollamaUrl = "http://localhost:11434";
-    public String ollamaModel = "timheinrich2011/verity-3b:latest";
+    public String ollamaModel = "llama3.1:8b";
 
-    // OpenAI-compatible API settings (Groq, OpenAI, OpenRouter, etc.)
-    public String apiEndpoint = "https://api.groq.com/openai/v1/chat/completions";
+    // API settings (OpenAI default, Gemini, Claude, Groq, DeepSeek, OpenRouter, Mistral)
+    public String apiEndpoint = "https://api.openai.com/v1/chat/completions";
     public String apiKey = "";
-    public String apiModel = "llama-3.3-70b-versatile";
+    public String apiModel = "gpt-4o-mini";
 
     // Text-to-Speech (TTS) settings — Bundled Sherpa-ONNX Piper voice is preferred
     // ttsMode: "SHERPA", "PIPER", "LOCAL", "SYNTH", "SYSTEM", "OPENAI_TTS", or "OFF"
@@ -66,24 +66,80 @@ public class VicConfig {
 
     public String getEffectiveProvider() {
         if (aiProvider == null || aiProvider.isBlank()) {
-            return "SCRIPTED";
+            return "OPENAI";
         }
         String upper = aiProvider.trim().toUpperCase();
-        if ("OLLAMA".equals(upper) || "OPENAI".equals(upper) || "SCRIPTED".equals(upper)) {
-            return upper;
-        }
-        return "SCRIPTED";
+        if ("OPENAPI".equals(upper)) return "OPENAI";
+        if ("GOOGLE".equals(upper)) return "GEMINI";
+        if ("ANTHROPIC".equals(upper)) return "CLAUDE";
+        return switch (upper) {
+            case "OPENAI", "GEMINI", "CLAUDE", "GROQ", "DEEPSEEK", "OPENROUTER", "MISTRAL", "OLLAMA", "SCRIPTED" -> upper;
+            default -> "OPENAI";
+        };
     }
 
     public void setProvider(String provider) {
-        String upper = provider == null ? "OLLAMA" : provider.trim().toUpperCase();
+        String upper = provider == null ? "OPENAI" : provider.trim().toUpperCase();
+        if ("OPENAPI".equals(upper)) upper = "OPENAI";
+        if ("GOOGLE".equals(upper)) upper = "GEMINI";
+        if ("ANTHROPIC".equals(upper)) upper = "CLAUDE";
         switch (upper) {
-            case "OLLAMA" -> {
-                this.aiProvider = "OLLAMA";
-                this.enableAiApi = true;
-            }
             case "OPENAI" -> {
                 this.aiProvider = "OPENAI";
+                this.enableAiApi = true;
+                if (this.apiEndpoint == null || this.apiEndpoint.isBlank() || this.apiEndpoint.contains("groq.com")) {
+                    this.apiEndpoint = "https://api.openai.com/v1/chat/completions";
+                }
+                if (this.apiModel == null || this.apiModel.isBlank() || this.apiModel.contains("llama")) {
+                    this.apiModel = "gpt-4o-mini";
+                }
+            }
+            case "GEMINI" -> {
+                this.aiProvider = "GEMINI";
+                this.enableAiApi = true;
+                if (this.apiEndpoint == null || this.apiEndpoint.isBlank() || !this.apiEndpoint.contains("generativelanguage.googleapis.com")) {
+                    this.apiEndpoint = "https://generativelanguage.googleapis.com/v1beta/models";
+                }
+                if (this.apiModel == null || this.apiModel.isBlank() || !this.apiModel.startsWith("gemini")) {
+                    this.apiModel = "gemini-1.5-flash";
+                }
+            }
+            case "CLAUDE" -> {
+                this.aiProvider = "CLAUDE";
+                this.enableAiApi = true;
+                if (this.apiEndpoint == null || this.apiEndpoint.isBlank() || !this.apiEndpoint.contains("anthropic.com")) {
+                    this.apiEndpoint = "https://api.anthropic.com/v1/messages";
+                }
+                if (this.apiModel == null || this.apiModel.isBlank() || !this.apiModel.startsWith("claude")) {
+                    this.apiModel = "claude-3-5-haiku-20241022";
+                }
+            }
+            case "GROQ" -> {
+                this.aiProvider = "GROQ";
+                this.enableAiApi = true;
+                this.apiEndpoint = "https://api.groq.com/openai/v1/chat/completions";
+                this.apiModel = "llama-3.3-70b-versatile";
+            }
+            case "DEEPSEEK" -> {
+                this.aiProvider = "DEEPSEEK";
+                this.enableAiApi = true;
+                this.apiEndpoint = "https://api.deepseek.com/chat/completions";
+                this.apiModel = "deepseek-chat";
+            }
+            case "OPENROUTER" -> {
+                this.aiProvider = "OPENROUTER";
+                this.enableAiApi = true;
+                this.apiEndpoint = "https://openrouter.ai/api/v1/chat/completions";
+                this.apiModel = "meta-llama/llama-3.3-70b-instruct";
+            }
+            case "MISTRAL" -> {
+                this.aiProvider = "MISTRAL";
+                this.enableAiApi = true;
+                this.apiEndpoint = "https://api.mistral.ai/v1/chat/completions";
+                this.apiModel = "mistral-small-latest";
+            }
+            case "OLLAMA" -> {
+                this.aiProvider = "OLLAMA";
                 this.enableAiApi = true;
             }
             default -> {
@@ -91,6 +147,13 @@ public class VicConfig {
                 this.enableAiApi = false;
             }
         }
+    }
+
+    public String getEffectiveApiKey(String provider) {
+        if (apiKey != null && !apiKey.isBlank()) {
+            return apiKey.trim();
+        }
+        return "";
     }
 
     public String getEffectiveTtsMode() {
@@ -188,8 +251,16 @@ public class VicConfig {
                 }
                 boolean migrated = false;
                 if (INSTANCE.aiProvider == null || INSTANCE.aiProvider.isBlank()) {
-                    INSTANCE.aiProvider = "SCRIPTED";
-                    INSTANCE.enableAiApi = false;
+                    INSTANCE.aiProvider = "OPENAI";
+                    INSTANCE.enableAiApi = true;
+                    migrated = true;
+                }
+                if (INSTANCE.apiEndpoint == null || INSTANCE.apiEndpoint.isBlank()) {
+                    INSTANCE.apiEndpoint = "https://api.openai.com/v1/chat/completions";
+                    migrated = true;
+                }
+                if (INSTANCE.apiModel == null || INSTANCE.apiModel.isBlank()) {
+                    INSTANCE.apiModel = "gpt-4o-mini";
                     migrated = true;
                 }
                 if (INSTANCE.ttsMode == null || INSTANCE.ttsMode.isBlank() || "AUTO".equalsIgnoreCase(INSTANCE.ttsMode)) {
