@@ -22,16 +22,19 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
-import net.minecraft.world.entity.ai.control.FlyingMoveControl;
+import net.minecraft.world.entity.ai.goal.FloatGoal;
+import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
-import net.minecraft.world.entity.ai.navigation.FlyingPathNavigation;
+import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
+import net.minecraft.world.entity.ai.navigation.GroundPathNavigation;
 import net.minecraft.world.entity.ai.navigation.PathNavigation;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Player;
@@ -42,6 +45,7 @@ import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.EnumSet;
 import java.util.UUID;
 
 public class VicEntity extends PathfinderMob {
@@ -57,22 +61,20 @@ public class VicEntity extends PathfinderMob {
 
     public VicEntity(EntityType<? extends PathfinderMob> entityType, Level level) {
         super(entityType, level);
-        this.moveControl = new FlyingMoveControl<>(this, 20, true);
-        this.setNoGravity(true);
         this.setPersistenceRequired();
     }
 
     public static AttributeSupplier.Builder createVicAttributes() {
         return PathfinderMob.createMobAttributes()
                 .add(Attributes.MAX_HEALTH, 200.0)
-                .add(Attributes.FLYING_SPEED, 0.45)
-                .add(Attributes.MOVEMENT_SPEED, 0.35)
+                .add(Attributes.MOVEMENT_SPEED, 0.30)
+                .add(Attributes.STEP_HEIGHT, 1.0)
                 .add(Attributes.FOLLOW_RANGE, 64.0);
     }
 
     @Override
     protected PathNavigation createNavigation(Level level) {
-        FlyingPathNavigation nav = new FlyingPathNavigation(this, level);
+        GroundPathNavigation nav = new GroundPathNavigation(this, level);
         nav.setCanOpenDoors(true);
         return nav;
     }
@@ -87,8 +89,11 @@ public class VicEntity extends PathfinderMob {
 
     @Override
     protected void registerGoals() {
-        this.goalSelector.addGoal(1, new LookAtPlayerGoal(this, Player.class, 24.0f));
-        this.goalSelector.addGoal(2, new RandomLookAroundGoal(this));
+        this.goalSelector.addGoal(0, new FloatGoal(this));
+        this.goalSelector.addGoal(1, new FollowOwnerWalkingGoal(this));
+        this.goalSelector.addGoal(2, new WaterAvoidingRandomStrollGoal(this, 0.75));
+        this.goalSelector.addGoal(3, new LookAtPlayerGoal(this, Player.class, 16.0f));
+        this.goalSelector.addGoal(4, new RandomLookAroundGoal(this));
     }
 
     public int getCorruptionStage() {
@@ -161,25 +166,11 @@ public class VicEntity extends PathfinderMob {
                 this.getLookControl().setLookAt(targetPlayer, 30.0f, 30.0f);
                 double distSq = this.distanceToSqr(targetPlayer);
 
-                if (distSq > 64.0 * 64.0) {
-                    this.snapTo(
-                            targetPlayer.getX() + (this.random.nextDouble() - 0.5) * 4.0,
-                            targetPlayer.getY() + 1.8,
-                            targetPlayer.getZ() + (this.random.nextDouble() - 0.5) * 4.0,
-                            this.getYRot(),
-                            this.getXRot()
-                    );
-                } else if (distSq > 4.0 * 4.0) {
-                    Vec3 viewVec = targetPlayer.getViewVector(1.0f);
-                    Vec3 targetPos = new Vec3(
-                            targetPlayer.getX() - viewVec.x * 2.2,
-                            targetPlayer.getEyeY() + 0.35 + Math.sin(this.tickCount * 0.08) * 0.25,
-                            targetPlayer.getZ() - viewVec.z * 2.2
-                    );
-                    Vec3 delta = targetPos.subtract(this.position());
-                    this.setDeltaMovement(delta.scale(0.12));
-                } else {
-                    this.setDeltaMovement(0, Math.sin(this.tickCount * 0.1) * 0.03, 0);
+                if (distSq > 48.0 * 48.0) {
+                    double tx = targetPlayer.getX() + (this.random.nextDouble() - 0.5) * 4.0;
+                    double tz = targetPlayer.getZ() + (this.random.nextDouble() - 0.5) * 4.0;
+                    this.snapTo(tx, targetPlayer.getY(), tz, this.getYRot(), this.getXRot());
+                    this.getNavigation().stop();
                 }
 
                 if (this.tickCount % 60 == 0 && targetPlayer instanceof ServerPlayer serverPlayer) {
@@ -584,5 +575,66 @@ public class VicEntity extends PathfinderMob {
             } catch (IllegalArgumentException ignored) {
             }
         });
+    }
+
+    static class FollowOwnerWalkingGoal extends Goal {
+        private final VicEntity vic;
+        private int timeToRecalcPath;
+
+        public FollowOwnerWalkingGoal(VicEntity vic) {
+            this.vic = vic;
+            this.setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK));
+        }
+
+        @Override
+        public boolean canUse() {
+            if (this.vic.level() instanceof ServerLevel serverLevel) {
+                Player target = this.vic.findTargetPlayer(serverLevel);
+                return target != null && !target.isSpectator() && this.vic.distanceToSqr(target) > 7.0;
+            }
+            return false;
+        }
+
+        @Override
+        public boolean canContinueToUse() {
+            if (this.vic.level() instanceof ServerLevel serverLevel) {
+                Player target = this.vic.findTargetPlayer(serverLevel);
+                return target != null && !target.isSpectator() && this.vic.distanceToSqr(target) > 4.0;
+            }
+            return false;
+        }
+
+        @Override
+        public void start() {
+            this.timeToRecalcPath = 0;
+        }
+
+        @Override
+        public void stop() {
+            this.vic.getNavigation().stop();
+        }
+
+        @Override
+        public void tick() {
+            if (!(this.vic.level() instanceof ServerLevel serverLevel)) return;
+            Player target = this.vic.findTargetPlayer(serverLevel);
+            if (target == null) return;
+
+            this.vic.getLookControl().setLookAt(target, 20.0f, 20.0f);
+            double distSq = this.vic.distanceToSqr(target);
+
+            if (distSq > 48.0 * 48.0) {
+                double tx = target.getX() + (this.vic.random.nextDouble() - 0.5) * 4.0;
+                double tz = target.getZ() + (this.vic.random.nextDouble() - 0.5) * 4.0;
+                this.vic.snapTo(tx, target.getY(), tz, this.vic.getYRot(), this.vic.getXRot());
+                this.vic.getNavigation().stop();
+                return;
+            }
+
+            if (--this.timeToRecalcPath <= 0) {
+                this.timeToRecalcPath = 10;
+                this.vic.getNavigation().moveTo(target, 1.25);
+            }
+        }
     }
 }

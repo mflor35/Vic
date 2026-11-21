@@ -38,7 +38,7 @@ public class VicEntityRenderer extends MobRenderer<VicEntity, VicRenderState, Vi
     }
 
     public VicEntityRenderer(EntityRendererProvider.Context context) {
-        super(context, new VicEntityModel(context.bakeLayer(VicModClient.VIC_LAYER)), 0.45f);
+        super(context, new VicEntityModel(context.bakeLayer(VicModClient.VIC_LAYER)), 0.5f);
     }
 
     @Override

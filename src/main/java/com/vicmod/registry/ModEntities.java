@@ -33,7 +33,8 @@ public class ModEntities {
             BuiltInRegistries.ENTITY_TYPE,
             VIC_KEY,
             EntityType.Builder.of(VicEntity::new, MobCategory.CREATURE)
-                    .sized(0.85f, 0.85f)
+                    .sized(0.7f, 1.85f)
+                    .eyeHeight(1.6f)
                     .clientTrackingRange(80)
                     .build(VIC_KEY)
     );

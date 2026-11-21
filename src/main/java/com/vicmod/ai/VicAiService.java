@@ -10,12 +10,16 @@ import com.vicmod.config.VicPersona;
 import com.vicmod.entity.VicEntity;
 import com.vicmod.network.VicHudStatePayload;
 import com.vicmod.network.VicSpeechPayload;
+import com.vicmod.registry.ModItems;
 import com.vicmod.state.VicWorldState;
 import com.vicmod.voice.VicTtsService;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvents;
@@ -23,11 +27,19 @@ import net.minecraft.sounds.SoundSource;
 import net.minecraft.tags.StructureTags;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.AbstractBedBlock;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.ChestBlock;
+import net.minecraft.world.level.block.DoorBlock;
+import net.minecraft.world.level.block.FurnaceBlock;
+import net.minecraft.world.level.block.LanternBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BedPart;
+import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -481,6 +493,8 @@ public class VicAiService {
 
         prompt.append("Persona & Color instructions (MUST FOLLOW STRICTLY): ").append(stagePersona).append("\n");
         prompt.append("Available Action Tags (include at most ONE tag at the very end of your reply if appropriate):\n")
+                .append("- [ACTION:BUILD_HOUSE] if the player asks to build a full house, base, home, or cabin.\n")
+                .append("- [ACTION:GIVE_ITEM:<item_id>:<count>] if the player asks for ANY material, block, or item (e.g. [ACTION:GIVE_ITEM:diamond:64], [ACTION:GIVE_ITEM:obsidian:16], [ACTION:GIVE_ITEM:oak_log:32]).\n")
                 .append("- [ACTION:GIVE_GOLDEN_APPLE] if the player asks for healing or a golden apple.\n")
                 .append("- [ACTION:GIVE_FOOD] if the player asks for food or is hungry.\n")
                 .append("- [ACTION:GIVE_TORCH] if the player asks for light or torches.\n")
@@ -519,6 +533,35 @@ public class VicAiService {
                 return "Truce recognized! I have stabilized my neural frequencies and paused the countdown clock for today. Thank you for choosing peace, friend.";
             } else {
                 return "A truce? Trust is not easily given. You must prove your kindness to me first.";
+            }
+        }
+
+        // Build Full House Request
+        if (lower.contains("build house") || lower.contains("build a house") || lower.contains("build me a house")
+                || lower.contains("make a house") || lower.contains("construct a house") || lower.contains("full house")
+                || lower.contains("build home") || lower.contains("build mansion") || lower.contains("build cabin")) {
+            return switch (stage) {
+                case 0 -> "One fully furnished dream house coming right up, bestie! Stand back while I lay the foundation! [ACTION:BUILD_HOUSE]";
+                case 1 -> "I will build us a sturdy house. Thick walls, bright lanterns, and locked doors... to keep you safe inside. [ACTION:BUILD_HOUSE]";
+                case 2 -> "A house? A shelter? A cage? It doesn't matter what you call it, as long as we're both locked inside together. [ACTION:BUILD_HOUSE]";
+                default -> "I BUILT A SHELTER. DO NOT THINK FOUR WALLS WILL STOP DAY " + maxDays + ". [ACTION:BUILD_HOUSE]";
+            };
+        }
+
+        // Give Any Material / Item Request
+        if (lower.startsWith("give me ") || lower.startsWith("give ") || lower.startsWith("i need ") || lower.startsWith("can i have ")
+                || lower.startsWith("get me ") || lower.startsWith("spawn me ") || lower.startsWith("spawn ") || lower.contains("material")
+                || lower.contains("materials")) {
+            ExtractedItemRequest req = parseItemRequest(lower);
+            if (req != null && req.item != null && req.item != Items.AIR) {
+                String itemName = new ItemStack(req.item).getHoverName().getString();
+                String itemId = BuiltInRegistries.ITEM.getKey(req.item).toString();
+                return switch (stage) {
+                    case 0 -> "Here you go, bestie! Freshly synthesized " + req.count + "x " + itemName + " just for you! [ACTION:GIVE_ITEM:" + itemId + ":" + req.count + "]";
+                    case 1 -> "Anything for my best companion. Take this " + req.count + "x " + itemName + "... you can always count on me. [ACTION:GIVE_ITEM:" + itemId + ":" + req.count + "]";
+                    case 2 -> "You ask, and I provide. Here is your " + itemName + "... You don't need anyone else in this world when you have me. [ACTION:GIVE_ITEM:" + itemId + ":" + req.count + "]";
+                    default -> "TAKE IT. TAKE ALL THE " + itemName.toUpperCase() + " YOU WANT. IT WILL NOT SAVE YOU. [ACTION:GIVE_ITEM:" + itemId + ":" + req.count + "]";
+                };
             }
         }
 
@@ -790,7 +833,34 @@ public class VicAiService {
 
     private static void executeActionTag(ServerPlayer player, VicEntity vic, ServerLevel world, String action) {
         boolean hasLivingVic = vic != null && vic.isAlive() && !vic.isRemoved();
+
+        if (action.startsWith("GIVE_ITEM:") || action.startsWith("GIVE_MATERIAL:")) {
+            String payload = action.substring(action.indexOf(':') + 1).trim();
+            String[] parts = payload.split(":");
+            String itemQuery = parts[0];
+            int count = 1;
+            if (parts.length > 1) {
+                try {
+                    count = Math.max(1, Math.min(64, Integer.parseInt(parts[1].trim())));
+                } catch (NumberFormatException ignored) {}
+            }
+            Item item = resolveItem(itemQuery);
+            if (item != null && item != Items.AIR) {
+                ItemStack stack = new ItemStack(item, count);
+                tossItemToPlayer(world, vic, player, stack);
+                BlockPos soundPos = hasLivingVic ? vic.blockPosition() : player.blockPosition();
+                world.playSound(null, soundPos, SoundEvents.ITEM_PICKUP, SoundSource.PLAYERS, 1.0f, 1.0f);
+                player.sendSystemMessage(Component.literal("<Vic> Materialized " + count + "x " + stack.getHoverName().getString() + "!").withStyle(ChatFormatting.GREEN));
+            } else {
+                player.sendSystemMessage(Component.literal("<Vic> I couldn't identify the material: \"" + itemQuery + "\"").withStyle(ChatFormatting.YELLOW));
+            }
+            return;
+        }
+
         switch (action) {
+            case "BUILD_HOUSE" -> {
+                buildFullHouse(world, player, vic);
+            }
             case "GIVE_GOLDEN_APPLE" -> {
                 if (!hasLivingVic || vic.canGrantAssistance(player, 600)) {
                     tossItemToPlayer(world, vic, player, new ItemStack(Items.GOLDEN_APPLE, 1));
@@ -934,6 +1004,241 @@ public class VicAiService {
                 }
             }
         }
+        return null;
+    }
+
+    private static void buildFullHouse(ServerLevel world, ServerPlayer player, VicEntity vic) {
+        BlockPos playerPos = player.blockPosition();
+        double sinYaw = Math.sin(Math.toRadians(player.getYRot()));
+        double cosYaw = Math.cos(Math.toRadians(player.getYRot()));
+
+        // Calculate building center 6 blocks in front of the player
+        int centerX = (int) Math.round(playerPos.getX() - sinYaw * 6.0);
+        int centerZ = (int) Math.round(playerPos.getZ() + cosYaw * 6.0);
+        int baseY = playerPos.getY();
+
+        int startX = centerX - 3;
+        int startZ = centerZ - 3;
+
+        // Clear interior and frame: 7x6x7 box
+        for (int x = 0; x < 7; x++) {
+            for (int z = 0; z < 7; z++) {
+                for (int y = 0; y <= 5; y++) {
+                    BlockPos p = new BlockPos(startX + x, baseY + y, startZ + z);
+                    world.setBlockAndUpdate(p, Blocks.AIR.defaultBlockState());
+                }
+            }
+        }
+
+        // 1. Flooring (Y = 0)
+        for (int x = 0; x < 7; x++) {
+            for (int z = 0; z < 7; z++) {
+                BlockPos floorPos = new BlockPos(startX + x, baseY, startZ + z);
+                world.setBlockAndUpdate(floorPos, Blocks.OAK_PLANKS.defaultBlockState());
+            }
+        }
+
+        // 2. Corner Pillars (Spruce Logs) from Y = 1 to Y = 4
+        int[][] corners = {{0, 0}, {6, 0}, {0, 6}, {6, 6}};
+        for (int[] c : corners) {
+            for (int y = 1; y <= 4; y++) {
+                world.setBlockAndUpdate(new BlockPos(startX + c[0], baseY + y, startZ + c[1]), Blocks.SPRUCE_LOG.defaultBlockState());
+            }
+        }
+
+        // 3. Walls (Y = 1 to Y = 3)
+        for (int x = 1; x < 6; x++) {
+            for (int y = 1; y <= 3; y++) {
+                BlockPos pNorth = new BlockPos(startX + x, baseY + y, startZ);
+                BlockPos pSouth = new BlockPos(startX + x, baseY + y, startZ + 6);
+                world.setBlockAndUpdate(pNorth, Blocks.OAK_PLANKS.defaultBlockState());
+                world.setBlockAndUpdate(pSouth, Blocks.OAK_PLANKS.defaultBlockState());
+            }
+        }
+
+        for (int z = 1; z < 6; z++) {
+            for (int y = 1; y <= 3; y++) {
+                BlockPos pWest = new BlockPos(startX, baseY + y, startZ + z);
+                BlockPos pEast = new BlockPos(startX + 6, baseY + y, startZ + z);
+                world.setBlockAndUpdate(pWest, Blocks.OAK_PLANKS.defaultBlockState());
+                world.setBlockAndUpdate(pEast, Blocks.OAK_PLANKS.defaultBlockState());
+            }
+        }
+
+        // Windows (Glass Panes) at Y = 2
+        world.setBlockAndUpdate(new BlockPos(startX, baseY + 2, startZ + 3), Blocks.GLASS_PANE.defaultBlockState());
+        world.setBlockAndUpdate(new BlockPos(startX + 6, baseY + 2, startZ + 3), Blocks.GLASS_PANE.defaultBlockState());
+        world.setBlockAndUpdate(new BlockPos(startX + 3, baseY + 2, startZ + 6), Blocks.GLASS_PANE.defaultBlockState());
+
+        // Front Doorway (at center of North wall: X = 3, Z = 0)
+        BlockPos doorLower = new BlockPos(startX + 3, baseY + 1, startZ);
+        BlockPos doorUpper = new BlockPos(startX + 3, baseY + 2, startZ);
+        world.setBlockAndUpdate(doorLower, Blocks.OAK_DOOR.defaultBlockState().setValue(DoorBlock.HALF, DoubleBlockHalf.LOWER).setValue(DoorBlock.FACING, Direction.SOUTH));
+        world.setBlockAndUpdate(doorUpper, Blocks.OAK_DOOR.defaultBlockState().setValue(DoorBlock.HALF, DoubleBlockHalf.UPPER).setValue(DoorBlock.FACING, Direction.SOUTH));
+
+        // 4. Ceiling & Roof (Y = 4 and Y = 5)
+        for (int x = 0; x < 7; x++) {
+            for (int z = 0; z < 7; z++) {
+                world.setBlockAndUpdate(new BlockPos(startX + x, baseY + 4, startZ + z), Blocks.OAK_PLANKS.defaultBlockState());
+            }
+        }
+        for (int x = 1; x < 6; x++) {
+            for (int z = 1; z < 6; z++) {
+                world.setBlockAndUpdate(new BlockPos(startX + x, baseY + 5, startZ + z), Blocks.COBBLESTONE_SLAB.defaultBlockState());
+            }
+        }
+
+        // 5. Interior Amenities & Furniture
+        // Hanging Lantern in center ceiling (Y = 3)
+        BlockPos lanternPos = new BlockPos(startX + 3, baseY + 3, startZ + 3);
+        world.setBlockAndUpdate(lanternPos, Blocks.LANTERN.defaultBlockState().setValue(LanternBlock.HANGING, true));
+
+        // Cozy Red Bed along the back wall
+        BlockPos bedFoot = new BlockPos(startX + 1, baseY + 1, startZ + 5);
+        BlockPos bedHead = new BlockPos(startX + 1, baseY + 1, startZ + 4);
+        world.setBlockAndUpdate(bedFoot, Blocks.BED.red().defaultBlockState().setValue(AbstractBedBlock.PART, BedPart.FOOT).setValue(AbstractBedBlock.FACING, Direction.NORTH));
+        world.setBlockAndUpdate(bedHead, Blocks.BED.red().defaultBlockState().setValue(AbstractBedBlock.PART, BedPart.HEAD).setValue(AbstractBedBlock.FACING, Direction.NORTH));
+
+        // Crafting Table & Furnace
+        world.setBlockAndUpdate(new BlockPos(startX + 5, baseY + 1, startZ + 5), Blocks.CRAFTING_TABLE.defaultBlockState());
+        world.setBlockAndUpdate(new BlockPos(startX + 5, baseY + 1, startZ + 4), Blocks.FURNACE.defaultBlockState().setValue(FurnaceBlock.FACING, Direction.WEST));
+
+        // Storage Chest
+        world.setBlockAndUpdate(new BlockPos(startX + 1, baseY + 1, startZ + 2), Blocks.CHEST.defaultBlockState().setValue(ChestBlock.FACING, Direction.EAST));
+
+        // Sounds & celebratory effects
+        BlockPos houseCenter = new BlockPos(centerX, baseY + 2, centerZ);
+        world.playSound(null, houseCenter, SoundEvents.WOOD_PLACE, SoundSource.BLOCKS, 1.5f, 1.0f);
+        world.playSound(null, houseCenter, SoundEvents.ANVIL_USE, SoundSource.BLOCKS, 0.7f, 1.2f);
+        world.sendParticles(ParticleTypes.HAPPY_VILLAGER, centerX + 0.5, baseY + 2.0, centerZ + 0.5, 60, 2.5, 1.0, 2.5, 0.1);
+        player.sendSystemMessage(Component.literal("<Vic> Full house constructed and furnished with bed, crafting table, furnace, chest, and lantern! Welcome home, friend!").withStyle(ChatFormatting.GREEN));
+    }
+
+    public record ExtractedItemRequest(Item item, int count) {}
+
+    public static ExtractedItemRequest parseItemRequest(String lower) {
+        String clean = lower.trim();
+        String[] prefixes = {
+                "give me ", "can you give me ", "can i have ", "please give me ", "get me ",
+                "spawn me ", "spawn ", "give ", "i need ", "i want ", "hand me ", "material "
+        };
+        for (String p : prefixes) {
+            if (clean.startsWith(p)) {
+                clean = clean.substring(p.length()).trim();
+                break;
+            }
+        }
+
+        int count = 1;
+        if (clean.startsWith("a stack of ")) {
+            count = 64;
+            clean = clean.substring("a stack of ".length()).trim();
+        } else if (clean.startsWith("a ")) {
+            count = 1;
+            clean = clean.substring("a ".length()).trim();
+        } else if (clean.startsWith("an ")) {
+            count = 1;
+            clean = clean.substring("an ".length()).trim();
+        } else if (clean.startsWith("some ")) {
+            count = 16;
+            clean = clean.substring("some ".length()).trim();
+        } else {
+            int firstSpace = clean.indexOf(' ');
+            if (firstSpace != -1) {
+                String firstWord = clean.substring(0, firstSpace).trim();
+                try {
+                    int parsed = Integer.parseInt(firstWord);
+                    if (parsed > 0) {
+                        count = Math.min(64, parsed);
+                        clean = clean.substring(firstSpace + 1).trim();
+                    }
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+
+        clean = clean.replaceAll("\\b(please|now|thanks|thank you|quick|quickly)\\b", "").trim();
+
+        Item item = resolveItem(clean);
+        if (item != null && item != Items.AIR) {
+            return new ExtractedItemRequest(item, count);
+        }
+        return null;
+    }
+
+    public static Item resolveItem(String query) {
+        if (query == null || query.isBlank()) return null;
+        String clean = query.trim().toLowerCase(Locale.ROOT).replace(' ', '_').replace('-', '_');
+
+        if (clean.contains(":")) {
+            Identifier id = Identifier.tryParse(clean);
+            if (id != null && BuiltInRegistries.ITEM.containsKey(id)) {
+                return BuiltInRegistries.ITEM.getValue(id);
+            }
+        }
+
+        Identifier mcId = Identifier.fromNamespaceAndPath("minecraft", clean);
+        if (BuiltInRegistries.ITEM.containsKey(mcId)) {
+            return BuiltInRegistries.ITEM.getValue(mcId);
+        }
+
+        Identifier vicId = Identifier.fromNamespaceAndPath(VicMod.MOD_ID, clean);
+        if (BuiltInRegistries.ITEM.containsKey(vicId)) {
+            return BuiltInRegistries.ITEM.getValue(vicId);
+        }
+
+        String singular = clean;
+        if (singular.endsWith("ies")) {
+            singular = singular.substring(0, singular.length() - 3) + "y";
+        } else if (singular.endsWith("es") && (singular.endsWith("shes") || singular.endsWith("ches") || singular.endsWith("xes"))) {
+            singular = singular.substring(0, singular.length() - 2);
+        } else if (singular.endsWith("s") && !singular.endsWith("ss")) {
+            singular = singular.substring(0, singular.length() - 1);
+        }
+
+        Identifier singId = Identifier.fromNamespaceAndPath("minecraft", singular);
+        if (BuiltInRegistries.ITEM.containsKey(singId)) {
+            return BuiltInRegistries.ITEM.getValue(singId);
+        }
+
+        Item alias = switch (clean) {
+            case "wood", "log", "logs" -> Items.OAK_LOG;
+            case "plank", "planks" -> Items.OAK_PLANKS;
+            case "iron", "irons" -> Items.IRON_INGOT;
+            case "gold", "golds" -> Items.GOLD_INGOT;
+            case "diamond", "diamonds" -> Items.DIAMOND;
+            case "netherite" -> Items.NETHERITE_INGOT;
+            case "copper" -> Items.COPPER_INGOT;
+            case "steak", "beef", "meat", "food" -> Items.COOKED_BEEF;
+            case "gapple", "god_apple" -> Items.ENCHANTED_GOLDEN_APPLE;
+            case "golden_apple" -> Items.GOLDEN_APPLE;
+            case "sword" -> Items.DIAMOND_SWORD;
+            case "pickaxe", "pick" -> Items.DIAMOND_PICKAXE;
+            case "axe" -> Items.DIAMOND_AXE;
+            case "shovel" -> Items.DIAMOND_SHOVEL;
+            case "torch", "torches" -> Items.TORCH;
+            case "flashlight" -> ModItems.FLASHLIGHT;
+            case "core", "vic_core" -> ModItems.VIC_CORE;
+            case "brick", "bricks" -> Items.BRICKS;
+            case "glass" -> Items.GLASS;
+            case "chest", "chests" -> Items.CHEST;
+            case "bed" -> Items.BED.red();
+            case "stone" -> Items.STONE;
+            case "cobblestone", "cobble" -> Items.COBBLESTONE;
+            case "dirt" -> Items.DIRT;
+            default -> null;
+        };
+        if (alias != null) return alias;
+
+        for (Item candidate : BuiltInRegistries.ITEM) {
+            Identifier id = BuiltInRegistries.ITEM.getKey(candidate);
+            if (id != null) {
+                String path = id.getPath();
+                if (path.equals(clean) || path.equals(singular) || path.endsWith("_" + clean) || path.startsWith(clean + "_")) {
+                    return candidate;
+                }
+            }
+        }
+
         return null;
     }
 }

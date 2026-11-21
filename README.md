@@ -143,7 +143,13 @@ Create a new Singleplayer world with **Allow Commands (Cheats) ON**:
   - **Circuit Snacks (`+6` Karma)**: Redstone, Gold Ingot, Copper Ingot, Quartz.
   - **Sweet Treats & Flowers (`+5` Karma)**: Flowers, Cookies, Cake, Berries, Apples, Honey, Bread.
   - **Garbage / Insults (`-10` Karma + Recoil)**: Rotten Flesh, Spider Eye, Dirt, Cobblestone, Gravel.
-- Ask Vic for help directly — he can **give items** (food, golden apples, torches, iron) and **build for you**: a **Chest**, a **Furnace**, or an **Iron Wall** (e.g. `/vic say build me a chest`, `make me a furnace`, or "put up an iron wall"). He places them in the open space in front of you and shows a preview before confirming.
+- **Hyper-Realistic Walking Body & Strides**:
+  - Instead of floating, Vic and all personas walk on the ground with hyper-realistic anatomical models and fluid motion physics: natural walking strides, leg and arm swings, torso bounce and sway, organic breathing, smooth head tracking, and dynamic persona attachments (fluttering axolotl gills and aquatic tail, moving Foxy fox tail and pirate hook, Freddy microphone and top hat, Bonnie/Springtrap bunny ears and puff tail).
+  - During later corruption stages, Vic displays eerie analog horror micro-twitches and psychological breakdown postures.
+- **Architect & Universal Materializer**:
+  - **Full House Construction**: Ask Vic to build a house (e.g. `/vic say build me a house`, `make a house`, or `build a home`). Vic clears the area in front of you and constructs a complete, stylish, fully furnished survival house with wood pillars, plank walls, glass pane windows, an oak door, a hanging ceiling lantern, a cozy red bed, a crafting table, a furnace, and a storage chest!
+  - **Universal Material & Item Synthesis**: Tell Vic to give you any material or block in the game! (e.g. `/vic say give me diamonds`, `give me 64 obsidian`, `give me netherite`, `give me a stack of oak logs`, `give me gold`). Vic automatically resolves the item, synthesizes the exact requested count (up to 64), and tosses it directly to your feet!
+  - Also builds individual **Chests**, **Furnaces**, and **Iron Barriers** upon request.
 
 ### 3. Boss Fight & Victory Ending (`The Vic Demon` & `Vic's Core`)
 - When the 5-day trial expires (`/vic setday 6`), **The Vic Demon** (`vic:vic_demon`) awakens with a **Server Boss Bar**, a telegraphed **Corruption Beam** (which can be interrupted and blinded by aiming your active **Flashlight** at its face), and a **Shadow Leap & Knockback Slam**.
