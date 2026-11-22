@@ -4,6 +4,7 @@ import com.vicmod.registry.ModEntities;
 import com.vicmod.state.VicWorldState;
 import com.vicmod.network.VicHudStatePayload;
 import com.vicmod.network.VicSpeechPayload;
+import com.vicmod.util.VicSpawnUtil;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.Component;
@@ -119,7 +120,8 @@ public class VicBoxEntity extends Mob {
         VicWorldState state = VicWorldState.getServerState(serverLevel.getServer());
         VicEntity vic = ModEntities.VIC.create(serverLevel, EntitySpawnReason.EVENT);
         if (vic != null) {
-            vic.snapTo(this.getX(), this.getY() + 0.6, this.getZ(), this.getYRot(), 0.0f);
+            VicSpawnUtil.clearSpawnArea(serverLevel, this.blockPosition());
+            vic.snapTo(this.getX(), this.getY() + 0.1, this.getZ(), this.getYRot(), 0.0f);
             state.transferSingletonVic(this, vic);
 
             Player nearest = serverLevel.getNearestPlayer(this, 32.0);

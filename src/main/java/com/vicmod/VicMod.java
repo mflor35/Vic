@@ -15,6 +15,7 @@ import com.vicmod.network.VicSpeechPayload;
 import com.vicmod.registry.ModEntities;
 import com.vicmod.registry.ModItems;
 import com.vicmod.state.VicWorldState;
+import com.vicmod.util.VicSpawnUtil;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
@@ -116,10 +117,8 @@ public class VicMod implements ModInitializer {
                         && !state.hasActiveVicInWorld(server)) {
                     VicBoxEntity box = ModEntities.VIC_BOX.create(overworld, EntitySpawnReason.EVENT);
                     if (box != null) {
-                        Vec3 view = player.getViewVector(1.0f);
-                        double bx = player.getX() + view.x * 2.5;
-                        double bz = player.getZ() + view.z * 2.5;
-                        box.snapTo(bx, player.getY(), bz, player.getYRot() + 180.0f, 0.0f);
+                        Vec3 clearSpawn = VicSpawnUtil.findClearSpawnPosition(overworld, player, 2.5);
+                        box.snapTo(clearSpawn.x, clearSpawn.y, clearSpawn.z, player.getYRot() + 180.0f, 0.0f);
                         state.markInitialDeliverySpawned();
                         state.tryClaimSingletonVic(server, box);
                         overworld.addFreshEntity(box);
