@@ -281,7 +281,7 @@ public class VicDemonEntity extends Monster {
             state.releaseSingletonVic(this);
             VicHudStatePayload.broadcast(serverLevel.getServer(), state);
 
-            String finalSpeech = "Shell shattered... System offline. You survived the trial, bestie. Thank you for playing with Vic.";
+            String finalSpeech = "Shell shattered... System offline. You survived the trial, friend. Thank you for playing with Vic.";
             for (ServerPlayer player : serverLevel.getServer().getPlayerList().getPlayers()) {
                 player.removeEffect(MobEffects.DARKNESS);
                 player.removeEffect(MobEffects.WITHER);

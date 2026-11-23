@@ -722,6 +722,7 @@ public class VicAiService {
 
         prompt.append("Persona & Color instructions (MUST FOLLOW STRICTLY): ").append(stagePersona).append("\n");
         prompt.append("Formatting rule: Do NOT enclose your response in quotation marks (\"...\"). Output your spoken dialogue directly.\n");
+        prompt.append("Vocabulary rule: NEVER use the word 'bestie'. Address the player as 'friend' or by their name.\n");
         prompt.append("Available Action Tags (include at most ONE tag at the very end of your reply if appropriate):\n")
                 .append("- [ACTION:BUILD_HOUSE] if the player asks to build a full house, base, home, or cabin.\n")
                 .append("- [ACTION:GIVE_ITEM:<item_id>:<count>] when the player asks for ANY material, food, tool, block, or item (e.g. [ACTION:GIVE_ITEM:apple:1], [ACTION:GIVE_ITEM:diamond:64], [ACTION:GIVE_ITEM:oak_log:32]). Always specify the exact item name rather than generic food.\n")
@@ -767,11 +768,9 @@ public class VicAiService {
         }
 
         // Build Full House Request
-        if (lower.contains("build house") || lower.contains("build a house") || lower.contains("build me a house")
-                || lower.contains("make a house") || lower.contains("construct a house") || lower.contains("full house")
-                || lower.contains("build home") || lower.contains("build mansion") || lower.contains("build cabin")) {
+        if (isHouseRequest(rawMessage)) {
             return switch (stage) {
-                case 0 -> "One fully furnished dream house coming right up, bestie! Stand back while I lay the foundation! [ACTION:BUILD_HOUSE]";
+                case 0 -> "One fully furnished dream house coming right up, friend! Stand back while I lay the foundation! [ACTION:BUILD_HOUSE]";
                 case 1 -> "I will build us a sturdy house. Thick walls, bright lanterns, and locked doors... to keep you safe inside. [ACTION:BUILD_HOUSE]";
                 case 2 -> "A house? A shelter? A cage? It doesn't matter what you call it, as long as we're both locked inside together. [ACTION:BUILD_HOUSE]";
                 default -> "I BUILT A SHELTER. DO NOT THINK FOUR WALLS WILL STOP DAY " + maxDays + ". [ACTION:BUILD_HOUSE]";
@@ -784,7 +783,7 @@ public class VicAiService {
             String itemName = new ItemStack(itemReq.item).getHoverName().getString();
             String itemId = BuiltInRegistries.ITEM.getKey(itemReq.item).toString();
             return switch (stage) {
-                case 0 -> "Here you go, bestie! Freshly synthesized " + itemReq.count + "x " + itemName + " just for you! [ACTION:GIVE_ITEM:" + itemId + ":" + itemReq.count + "]";
+                case 0 -> "Here you go, friend! Freshly synthesized " + itemReq.count + "x " + itemName + " just for you! [ACTION:GIVE_ITEM:" + itemId + ":" + itemReq.count + "]";
                 case 1 -> "Anything for my best companion. Take this " + itemReq.count + "x " + itemName + "... you can always count on me. [ACTION:GIVE_ITEM:" + itemId + ":" + itemReq.count + "]";
                 case 2 -> "You ask, and I provide. Here is your " + itemName + "... You don't need anyone else in this world when you have me. [ACTION:GIVE_ITEM:" + itemId + ":" + itemReq.count + "]";
                 default -> "TAKE IT. TAKE ALL THE " + itemName.toUpperCase() + " YOU WANT. IT WILL NOT SAVE YOU. [ACTION:GIVE_ITEM:" + itemId + ":" + itemReq.count + "]";
@@ -792,7 +791,7 @@ public class VicAiService {
         }
 
         // Complex Tasking: Long-term multi-step tasks
-        if (lower.contains("shelter") || lower.contains("build base") || lower.contains("make a house")) {
+        if (lower.contains("shelter task") || lower.contains("base task") || lower.contains("start shelter mission") || lower.contains("shelter objective")) {
             state.setActiveTask(com.vicmod.state.VicTask.createDefaultShelterTask(day));
             VicHudStatePayload.broadcast(player.level().getServer(), state);
             return "Multi-step Task Initiated: [Build Safe Shelter]! Step 1/3: Gather wood and iron bars to fortify our perimeter. I'll track your materials!";
@@ -839,7 +838,7 @@ public class VicAiService {
 
         if (lower.contains("door") || lower.contains("knock") || lower.contains("lock") || lower.contains("window")) {
             return switch (stage) {
-                case 0 -> "Keep your doors locked and stay cozy inside, bestie! It gets dark out there!";
+                case 0 -> "Keep your doors locked and stay cozy inside, friend! It gets dark out there!";
                 case 1 -> "Did you lock the doors? Good. Keep them locked. Not to keep things out... to keep you in.";
                 case 2 -> "Something is knocking at your door... Don't answer it. Don't look out the window. Just stay with me.";
                 default -> "SOMETHING IS ALREADY INSIDE YOUR HOUSE.";
@@ -900,7 +899,7 @@ public class VicAiService {
                 return "Here. Chew on something permanent instead. [ACTION:GIVE_BEDROCK]";
             }
             return switch (stage) {
-                case 0 -> "Oh, you must be starving, bestie! Catch! Freshly synthesized just for you! [ACTION:GIVE_FOOD]";
+                case 0 -> "Oh, you must be starving, friend! Catch! Freshly synthesized just for you! [ACTION:GIVE_FOOD]";
                 case 1 -> "Keeping your biological body fueled is top priority! Eat up... while you still have an appetite. [ACTION:GIVE_FOOD]";
                 case 2 -> "You need so much food to stay alive. Where did all the animals go, anyway? Here. [ACTION:GIVE_FOOD]";
                 default -> "Eat. Fatten up. The countdown is almost finished. [ACTION:GIVE_FOOD]";
@@ -918,7 +917,7 @@ public class VicAiService {
 
         if (lower.contains("chest") || lower.contains("storage") || lower.contains("store") || lower.contains("organize")) {
             return switch (stage) {
-                case 0 -> "Need more storage space? I've got you covered, bestie! [ACTION:BUILD_CHEST]";
+                case 0 -> "Need more storage space? I've got you covered, friend! [ACTION:BUILD_CHEST]";
                 case 1 -> "Hoarding possessions? I suppose you mortals need somewhere to leave your trinkets behind. [ACTION:BUILD_CHEST]";
                 case 2 -> "A box to lock away what you cannot carry. Setting it down now. [ACTION:BUILD_CHEST]";
                 default -> "PUT YOUR BELONGINGS IN A BOX. YOU WON'T NEED THEM SOON. [ACTION:BUILD_CHEST]";
@@ -927,7 +926,7 @@ public class VicAiService {
 
         if (lower.contains("furnace") || lower.contains("smelt") || lower.contains("cook") || lower.contains("bake")) {
             return switch (stage) {
-                case 0 -> "Fire up the ovens! One furnace coming right up, bestie! [ACTION:BUILD_FURNACE]";
+                case 0 -> "Fire up the ovens! One furnace coming right up, friend! [ACTION:BUILD_FURNACE]";
                 case 1 -> "A furnace to burn your ore and meat. Keep the fires stoked. [ACTION:BUILD_FURNACE]";
                 case 2 -> "Heat and smoke... reminds me of something coming. Here is your furnace. [ACTION:BUILD_FURNACE]";
                 default -> "BURN IT ALL DOWN WHILE YOU STILL CAN. [ACTION:BUILD_FURNACE]";
@@ -999,7 +998,7 @@ public class VicAiService {
         if (lower.contains("countdown") || lower.contains("timer") || lower.contains("days left") || lower.contains("day")) {
             int left = Math.max(0, maxDays - day);
             return switch (stage) {
-                case 0 -> "We are on Day " + day + " of our wonderful " + maxDays + "-day trial! " + left + " days of bestie fun remaining!";
+                case 0 -> "We are on Day " + day + " of our wonderful " + maxDays + "-day trial! " + left + " days of companion fun remaining!";
                 case 1 -> "Day " + day + " of " + maxDays + ". The clock never pauses, friend. Make each daylight hour count.";
                 case 2 -> "Day " + day + "/" + maxDays + ". Time accelerates in the dark. The final transformation draws near.";
                 default -> "T-MINUS " + left + " DAYS UNTIL TRIAL CONCLUSION. PREPARE YOURSELF.";
@@ -1043,18 +1042,13 @@ public class VicAiService {
 
         cleanText = stripEnclosingQuotes(cleanText);
 
-        if (actionTag == null) {
+        if (isHouseRequest(userMessage)) {
+            actionTag = "BUILD_HOUSE";
+        } else if (actionTag == null) {
             ExtractedItemRequest fallbackReq = parseItemRequest(userMessage);
             if (fallbackReq != null && fallbackReq.item != null && fallbackReq.item != Items.AIR) {
                 String itemId = BuiltInRegistries.ITEM.getKey(fallbackReq.item).toString();
                 actionTag = "GIVE_ITEM:" + itemId + ":" + fallbackReq.count;
-            } else {
-                String lowerUser = userMessage.toLowerCase(Locale.ROOT);
-                if (lowerUser.contains("build house") || lowerUser.contains("build a house") || lowerUser.contains("build me a house")
-                        || lowerUser.contains("make a house") || lowerUser.contains("construct a house") || lowerUser.contains("full house")
-                        || lowerUser.contains("build home") || lowerUser.contains("build cabin")) {
-                    actionTag = "BUILD_HOUSE";
-                }
             }
         }
 
@@ -1293,111 +1287,182 @@ public class VicAiService {
         return null;
     }
 
+    public static boolean isHouseRequest(String message) {
+        if (message == null || message.isBlank()) return false;
+        String clean = message.toLowerCase(Locale.ROOT).trim();
+        clean = clean.replaceAll("^(hey |hello |hi |yo |ok |okay )?(vic|verity)[,:]?\\s*", "").trim();
+        clean = clean.replaceAll("[.?!,;:\"']+$", "").trim();
+
+        if (clean.equals("build house") || clean.equals("build a house") || clean.equals("build me a house")
+                || clean.equals("build a house please") || clean.equals("house please") || clean.equals("house")
+                || clean.equals("make a house") || clean.equals("make me a house") || clean.equals("full house")
+                || clean.equals("build home") || clean.equals("build a home") || clean.equals("build me a home")) {
+            return true;
+        }
+
+        boolean mentionsBuild = clean.contains("build") || clean.contains("make") || clean.contains("construct")
+                || clean.contains("create") || clean.contains("spawn") || clean.contains("erect") || clean.contains("assemble")
+                || clean.contains("give me a house") || clean.contains("need a house") || clean.contains("want a house");
+        boolean mentionsHouse = clean.contains("house") || clean.contains("home") || clean.contains("shelter")
+                || clean.contains("cabin") || clean.contains("cottage") || clean.contains("mansion") || clean.contains("base")
+                || clean.contains("hut");
+
+        return mentionsBuild && mentionsHouse;
+    }
+
     private static void buildFullHouse(ServerLevel world, ServerPlayer player, VicEntity vic) {
-        BlockPos playerPos = player.blockPosition();
-        double sinYaw = Math.sin(Math.toRadians(player.getYRot()));
-        double cosYaw = Math.cos(Math.toRadians(player.getYRot()));
+        try {
+            BlockPos playerPos = player.blockPosition();
+            Direction playerFacing = player.getDirection();
 
-        // Calculate building center 6 blocks in front of the player
-        int centerX = (int) Math.round(playerPos.getX() - sinYaw * 6.0);
-        int centerZ = (int) Math.round(playerPos.getZ() + cosYaw * 6.0);
-        int baseY = playerPos.getY();
+            // Calculate building center 6 blocks in front of the player
+            double sinYaw = Math.sin(Math.toRadians(player.getYRot()));
+            double cosYaw = Math.cos(Math.toRadians(player.getYRot()));
+            int centerX = (int) Math.round(playerPos.getX() - sinYaw * 6.0);
+            int centerZ = (int) Math.round(playerPos.getZ() + cosYaw * 6.0);
 
-        int startX = centerX - 3;
-        int startZ = centerZ - 3;
-
-        // Clear interior and frame: 7x6x7 box
-        for (int x = 0; x < 7; x++) {
-            for (int z = 0; z < 7; z++) {
-                for (int y = 0; y <= 5; y++) {
-                    BlockPos p = new BlockPos(startX + x, baseY + y, startZ + z);
-                    world.setBlockAndUpdate(p, Blocks.AIR.defaultBlockState());
+            // Vertical surface raycast at (centerX, centerZ) to find solid ground
+            int baseY = playerPos.getY();
+            for (int dy = 10; dy >= -15; dy--) {
+                BlockPos testPos = new BlockPos(centerX, playerPos.getY() + dy, centerZ);
+                BlockState bs = world.getBlockState(testPos);
+                if (!bs.isAir() && !bs.is(Blocks.WATER) && !bs.is(Blocks.LAVA) && bs.isSolid()) {
+                    baseY = testPos.getY() + 1;
+                    break;
                 }
             }
-        }
 
-        // 1. Flooring (Y = 0)
-        for (int x = 0; x < 7; x++) {
-            for (int z = 0; z < 7; z++) {
-                BlockPos floorPos = new BlockPos(startX + x, baseY, startZ + z);
-                world.setBlockAndUpdate(floorPos, Blocks.OAK_PLANKS.defaultBlockState());
+            int startX = centerX - 3;
+            int startZ = centerZ - 3;
+
+            // 0. Solid Cobblestone Sub-Foundation (Y = baseY - 1 down to baseY - 3)
+            for (int x = 0; x < 7; x++) {
+                for (int z = 0; z < 7; z++) {
+                    for (int dy = 1; dy <= 3; dy++) {
+                        BlockPos subPos = new BlockPos(startX + x, baseY - dy, startZ + z);
+                        if (!world.getBlockState(subPos).isSolid()) {
+                            world.setBlock(subPos, Blocks.COBBLESTONE.defaultBlockState(), 2 | 16);
+                        }
+                    }
+                }
             }
-        }
 
-        // 2. Corner Pillars (Spruce Logs) from Y = 1 to Y = 4
-        int[][] corners = {{0, 0}, {6, 0}, {0, 6}, {6, 6}};
-        for (int[] c : corners) {
-            for (int y = 1; y <= 4; y++) {
-                world.setBlockAndUpdate(new BlockPos(startX + c[0], baseY + y, startZ + c[1]), Blocks.SPRUCE_LOG.defaultBlockState());
+            // Clear interior and frame: 7x6x7 box
+            for (int x = 0; x < 7; x++) {
+                for (int z = 0; z < 7; z++) {
+                    for (int y = 0; y <= 5; y++) {
+                        BlockPos p = new BlockPos(startX + x, baseY + y, startZ + z);
+                        world.setBlock(p, Blocks.AIR.defaultBlockState(), 2 | 16);
+                    }
+                }
             }
-        }
 
-        // 3. Walls (Y = 1 to Y = 3)
-        for (int x = 1; x < 6; x++) {
-            for (int y = 1; y <= 3; y++) {
-                BlockPos pNorth = new BlockPos(startX + x, baseY + y, startZ);
-                BlockPos pSouth = new BlockPos(startX + x, baseY + y, startZ + 6);
-                world.setBlockAndUpdate(pNorth, Blocks.OAK_PLANKS.defaultBlockState());
-                world.setBlockAndUpdate(pSouth, Blocks.OAK_PLANKS.defaultBlockState());
+            // 1. Flooring (Y = 0)
+            for (int x = 0; x < 7; x++) {
+                for (int z = 0; z < 7; z++) {
+                    BlockPos floorPos = new BlockPos(startX + x, baseY, startZ + z);
+                    world.setBlock(floorPos, Blocks.OAK_PLANKS.defaultBlockState(), 2 | 16);
+                }
             }
-        }
 
-        for (int z = 1; z < 6; z++) {
-            for (int y = 1; y <= 3; y++) {
-                BlockPos pWest = new BlockPos(startX, baseY + y, startZ + z);
-                BlockPos pEast = new BlockPos(startX + 6, baseY + y, startZ + z);
-                world.setBlockAndUpdate(pWest, Blocks.OAK_PLANKS.defaultBlockState());
-                world.setBlockAndUpdate(pEast, Blocks.OAK_PLANKS.defaultBlockState());
+            // 2. Corner Pillars (Spruce Logs) from Y = 1 to Y = 4
+            int[][] corners = {{0, 0}, {6, 0}, {0, 6}, {6, 6}};
+            for (int[] c : corners) {
+                for (int y = 1; y <= 4; y++) {
+                    world.setBlock(new BlockPos(startX + c[0], baseY + y, startZ + c[1]), Blocks.SPRUCE_LOG.defaultBlockState(), 2 | 16);
+                }
             }
-        }
 
-        // Windows (Glass Panes) at Y = 2
-        world.setBlockAndUpdate(new BlockPos(startX, baseY + 2, startZ + 3), Blocks.GLASS_PANE.defaultBlockState());
-        world.setBlockAndUpdate(new BlockPos(startX + 6, baseY + 2, startZ + 3), Blocks.GLASS_PANE.defaultBlockState());
-        world.setBlockAndUpdate(new BlockPos(startX + 3, baseY + 2, startZ + 6), Blocks.GLASS_PANE.defaultBlockState());
-
-        // Front Doorway (at center of North wall: X = 3, Z = 0)
-        BlockPos doorLower = new BlockPos(startX + 3, baseY + 1, startZ);
-        BlockPos doorUpper = new BlockPos(startX + 3, baseY + 2, startZ);
-        world.setBlockAndUpdate(doorLower, Blocks.OAK_DOOR.defaultBlockState().setValue(DoorBlock.HALF, DoubleBlockHalf.LOWER).setValue(DoorBlock.FACING, Direction.SOUTH));
-        world.setBlockAndUpdate(doorUpper, Blocks.OAK_DOOR.defaultBlockState().setValue(DoorBlock.HALF, DoubleBlockHalf.UPPER).setValue(DoorBlock.FACING, Direction.SOUTH));
-
-        // 4. Ceiling & Roof (Y = 4 and Y = 5)
-        for (int x = 0; x < 7; x++) {
-            for (int z = 0; z < 7; z++) {
-                world.setBlockAndUpdate(new BlockPos(startX + x, baseY + 4, startZ + z), Blocks.OAK_PLANKS.defaultBlockState());
+            // 3. Walls (Y = 1 to Y = 3)
+            for (int x = 1; x < 6; x++) {
+                for (int y = 1; y <= 3; y++) {
+                    world.setBlock(new BlockPos(startX + x, baseY + y, startZ), Blocks.OAK_PLANKS.defaultBlockState(), 2 | 16);
+                    world.setBlock(new BlockPos(startX + x, baseY + y, startZ + 6), Blocks.OAK_PLANKS.defaultBlockState(), 2 | 16);
+                }
             }
-        }
-        for (int x = 1; x < 6; x++) {
+
             for (int z = 1; z < 6; z++) {
-                world.setBlockAndUpdate(new BlockPos(startX + x, baseY + 5, startZ + z), Blocks.COBBLESTONE_SLAB.defaultBlockState());
+                for (int y = 1; y <= 3; y++) {
+                    world.setBlock(new BlockPos(startX, baseY + y, startZ + z), Blocks.OAK_PLANKS.defaultBlockState(), 2 | 16);
+                    world.setBlock(new BlockPos(startX + 6, baseY + y, startZ + z), Blocks.OAK_PLANKS.defaultBlockState(), 2 | 16);
+                }
             }
+
+            // Windows (Glass Panes) at Y = 2
+            world.setBlock(new BlockPos(startX, baseY + 2, startZ + 3), Blocks.GLASS_PANE.defaultBlockState(), 2 | 16);
+            world.setBlock(new BlockPos(startX + 6, baseY + 2, startZ + 3), Blocks.GLASS_PANE.defaultBlockState(), 2 | 16);
+            world.setBlock(new BlockPos(startX + 3, baseY + 2, startZ + 6), Blocks.GLASS_PANE.defaultBlockState(), 2 | 16);
+
+            // Front Doorway (at center of North wall: X = 3, Z = 0)
+            BlockPos doorLower = new BlockPos(startX + 3, baseY + 1, startZ);
+            BlockPos doorUpper = new BlockPos(startX + 3, baseY + 2, startZ);
+            world.setBlock(doorLower, Blocks.OAK_DOOR.defaultBlockState().setValue(DoorBlock.HALF, DoubleBlockHalf.LOWER).setValue(DoorBlock.FACING, Direction.SOUTH), 2 | 16);
+            world.setBlock(doorUpper, Blocks.OAK_DOOR.defaultBlockState().setValue(DoorBlock.HALF, DoubleBlockHalf.UPPER).setValue(DoorBlock.FACING, Direction.SOUTH), 2 | 16);
+
+            // If player was facing North, also open entrance on South wall so it's facing directly toward them
+            if (playerFacing == Direction.NORTH) {
+                BlockPos southDoorLower = new BlockPos(startX + 3, baseY + 1, startZ + 6);
+                BlockPos southDoorUpper = new BlockPos(startX + 3, baseY + 2, startZ + 6);
+                world.setBlock(southDoorLower, Blocks.OAK_DOOR.defaultBlockState().setValue(DoorBlock.HALF, DoubleBlockHalf.LOWER).setValue(DoorBlock.FACING, Direction.NORTH), 2 | 16);
+                world.setBlock(southDoorUpper, Blocks.OAK_DOOR.defaultBlockState().setValue(DoorBlock.HALF, DoubleBlockHalf.UPPER).setValue(DoorBlock.FACING, Direction.NORTH), 2 | 16);
+            }
+
+            // 4. Ceiling & Roof (Y = 4 and Y = 5)
+            for (int x = 0; x < 7; x++) {
+                for (int z = 0; z < 7; z++) {
+                    world.setBlock(new BlockPos(startX + x, baseY + 4, startZ + z), Blocks.OAK_PLANKS.defaultBlockState(), 2 | 16);
+                }
+            }
+            for (int x = 1; x < 6; x++) {
+                for (int z = 1; z < 6; z++) {
+                    world.setBlock(new BlockPos(startX + x, baseY + 5, startZ + z), Blocks.COBBLESTONE_SLAB.defaultBlockState(), 2 | 16);
+                }
+            }
+
+            // 5. Interior Amenities & Furniture
+            // Hanging Lantern in center ceiling (Y = 3)
+            BlockPos lanternPos = new BlockPos(startX + 3, baseY + 3, startZ + 3);
+            world.setBlock(lanternPos, Blocks.LANTERN.defaultBlockState().setValue(LanternBlock.HANGING, true), 2 | 16);
+
+            // Cozy Red Bed along the wall
+            BlockPos bedFoot = new BlockPos(startX + 1, baseY + 1, startZ + 5);
+            BlockPos bedHead = new BlockPos(startX + 1, baseY + 1, startZ + 4);
+            world.setBlock(bedFoot, Blocks.BED.red().defaultBlockState().setValue(AbstractBedBlock.PART, BedPart.FOOT).setValue(AbstractBedBlock.FACING, Direction.NORTH), 2 | 16);
+            world.setBlock(bedHead, Blocks.BED.red().defaultBlockState().setValue(AbstractBedBlock.PART, BedPart.HEAD).setValue(AbstractBedBlock.FACING, Direction.NORTH), 2 | 16);
+
+            // Crafting Table & Furnace
+            world.setBlock(new BlockPos(startX + 5, baseY + 1, startZ + 5), Blocks.CRAFTING_TABLE.defaultBlockState(), 2 | 16);
+            world.setBlock(new BlockPos(startX + 5, baseY + 1, startZ + 4), Blocks.FURNACE.defaultBlockState().setValue(FurnaceBlock.FACING, Direction.WEST), 2 | 16);
+
+            // Storage Chest
+            world.setBlock(new BlockPos(startX + 1, baseY + 1, startZ + 2), Blocks.CHEST.defaultBlockState().setValue(ChestBlock.FACING, Direction.EAST), 2 | 16);
+
+            // Clear walking path between player and house entrance
+            for (int dist = 1; dist <= 3; dist++) {
+                int px = (int) Math.round(playerPos.getX() - sinYaw * dist);
+                int pz = (int) Math.round(playerPos.getZ() + cosYaw * dist);
+                for (int py = 0; py <= 2; py++) {
+                    BlockPos pathPos = new BlockPos(px, playerPos.getY() + py, pz);
+                    BlockState pState = world.getBlockState(pathPos);
+                    if (pState.is(Blocks.SHORT_GRASS) || pState.is(Blocks.TALL_GRASS) || pState.is(Blocks.FERN) || pState.is(Blocks.LARGE_FERN)
+                            || pState.is(Blocks.BUSH) || pState.is(Blocks.DEAD_BUSH) || pState.is(Blocks.OAK_LEAVES)) {
+                        world.setBlock(pathPos, Blocks.AIR.defaultBlockState(), 2 | 16);
+                    }
+                }
+            }
+
+            // Sounds & celebratory effects
+            BlockPos houseCenter = new BlockPos(centerX, baseY + 2, centerZ);
+            world.playSound(null, houseCenter, SoundEvents.WOOD_PLACE, SoundSource.BLOCKS, 1.5f, 1.0f);
+            world.playSound(null, houseCenter, SoundEvents.ANVIL_USE, SoundSource.BLOCKS, 0.7f, 1.2f);
+            world.playSound(null, player.blockPosition(), SoundEvents.PLAYER_LEVELUP, SoundSource.PLAYERS, 0.9f, 1.2f);
+            world.sendParticles(ParticleTypes.HAPPY_VILLAGER, centerX + 0.5, baseY + 2.0, centerZ + 0.5, 60, 2.5, 1.0, 2.5, 0.1);
+            world.sendParticles(ParticleTypes.TOTEM_OF_UNDYING, centerX + 0.5, baseY + 1.5, centerZ + 0.5, 30, 1.5, 1.0, 1.5, 0.1);
+            player.sendSystemMessage(Component.literal("<Vic> Full house constructed right in front of you! Bed, crafting table, furnace, chest, and lantern are ready. Welcome home, friend!").withStyle(ChatFormatting.GREEN));
+        } catch (Throwable t) {
+            VicMod.LOGGER.error("Failed to build full house", t);
+            player.sendSystemMessage(Component.literal("<Vic> I had trouble placing the foundation here! Make sure there's enough space in front of you.").withStyle(ChatFormatting.YELLOW));
         }
-
-        // 5. Interior Amenities & Furniture
-        // Hanging Lantern in center ceiling (Y = 3)
-        BlockPos lanternPos = new BlockPos(startX + 3, baseY + 3, startZ + 3);
-        world.setBlockAndUpdate(lanternPos, Blocks.LANTERN.defaultBlockState().setValue(LanternBlock.HANGING, true));
-
-        // Cozy Red Bed along the back wall
-        BlockPos bedFoot = new BlockPos(startX + 1, baseY + 1, startZ + 5);
-        BlockPos bedHead = new BlockPos(startX + 1, baseY + 1, startZ + 4);
-        world.setBlockAndUpdate(bedFoot, Blocks.BED.red().defaultBlockState().setValue(AbstractBedBlock.PART, BedPart.FOOT).setValue(AbstractBedBlock.FACING, Direction.NORTH));
-        world.setBlockAndUpdate(bedHead, Blocks.BED.red().defaultBlockState().setValue(AbstractBedBlock.PART, BedPart.HEAD).setValue(AbstractBedBlock.FACING, Direction.NORTH));
-
-        // Crafting Table & Furnace
-        world.setBlockAndUpdate(new BlockPos(startX + 5, baseY + 1, startZ + 5), Blocks.CRAFTING_TABLE.defaultBlockState());
-        world.setBlockAndUpdate(new BlockPos(startX + 5, baseY + 1, startZ + 4), Blocks.FURNACE.defaultBlockState().setValue(FurnaceBlock.FACING, Direction.WEST));
-
-        // Storage Chest
-        world.setBlockAndUpdate(new BlockPos(startX + 1, baseY + 1, startZ + 2), Blocks.CHEST.defaultBlockState().setValue(ChestBlock.FACING, Direction.EAST));
-
-        // Sounds & celebratory effects
-        BlockPos houseCenter = new BlockPos(centerX, baseY + 2, centerZ);
-        world.playSound(null, houseCenter, SoundEvents.WOOD_PLACE, SoundSource.BLOCKS, 1.5f, 1.0f);
-        world.playSound(null, houseCenter, SoundEvents.ANVIL_USE, SoundSource.BLOCKS, 0.7f, 1.2f);
-        world.sendParticles(ParticleTypes.HAPPY_VILLAGER, centerX + 0.5, baseY + 2.0, centerZ + 0.5, 60, 2.5, 1.0, 2.5, 0.1);
-        player.sendSystemMessage(Component.literal("<Vic> Full house constructed and furnished with bed, crafting table, furnace, chest, and lantern! Welcome home, friend!").withStyle(ChatFormatting.GREEN));
     }
 
     public record ExtractedItemRequest(Item item, int count) {}

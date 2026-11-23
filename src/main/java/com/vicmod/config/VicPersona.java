@@ -190,7 +190,7 @@ public enum VicPersona {
             case GREEN -> "Yay, leafy green! Everything looks so pretty and gentle! Please don't step on any flowers today, okay?";
             case PINK -> "Oh darling, pastel pink!! My heart circuits are overflowing with love for you! Never ever leave my side, sweetheart!";
             case PURPLE -> "Great. Purple. The color of existential dread. I suppose you expect me to clap and do backflips now?";
-            case AXOLOTL -> "*Bloop!* My gills are ticklish! Look at me, I'm an axolotl now! Let's go swim in the reef, bestie!";
+            case AXOLOTL -> "*Bloop!* My gills are ticklish! Look at me, I'm an axolotl now! Let's go swim in the reef, friend!";
             case FREDDY -> "Welcome to Freddy Fazbear's Pizza! Where fantasy and fun come to life! Hur-hur-hur-hur-hur!";
             case FOXY -> "Yarr-harr-harr! Never underestimate the cunning of a pirate! Or a fox for that matter, matey!";
             case BONNIE -> "Let's rock and roll, superstar! The guitar solos are about to get electric!";
@@ -272,7 +272,7 @@ public enum VicPersona {
                     "I just checked the satellite feed, and you are officially the smartest player in the universe!"
             };
             case GREEN -> new String[] {
-                    "The grass smells so fresh today, bestie! Let's plant some flowers together!",
+                    "The grass smells so fresh today, friend! Let's plant some flowers together!",
                     "Please don't hurt the little sheep! They're just fluffy clouds on grass!",
                     "Look at the butterflies and bees! Life is so gentle and sweet!",
                     "Even when it gets dark, I'll stay right next to you so you don't feel lonely!"
@@ -292,7 +292,7 @@ public enum VicPersona {
             case AXOLOTL -> new String[] {
                     "*Bloop!* Swimming in the coral reefs is the best part of the day!",
                     "Did you know axolotls can regenerate anything? Even friendship!",
-                    "Keep your bucket ready, bestie! Hydration is vital for survival!",
+                    "Keep your bucket ready, friend! Hydration is vital for survival!",
                     "Splish splash! The water is nice and cool, let's catch some tropical fish!"
             };
             case FREDDY -> new String[] {

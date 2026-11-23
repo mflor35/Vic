@@ -435,7 +435,7 @@ public class VicEntity extends PathfinderMob {
             world.sendParticles(ParticleTypes.HEART, this.getX(), this.getY() + 0.8, this.getZ(), 10, 0.4, 0.4, 0.4, 0.05);
             world.playSound(null, this.blockPosition(), SoundEvents.PLAYER_LEVELUP, SoundSource.NEUTRAL, 1.0f, 1.4f);
             VicAiService.deliverDirectLine(player, this, stage,
-                    "WHOA!! Is this really for me?! You are officially the greatest bestie in the multiverse! Take this energy boost!");
+                    "WHOA!! Is this really for me?! You are officially the greatest friend in the multiverse! Take this energy boost!");
             return true;
         }
 
@@ -462,7 +462,7 @@ public class VicEntity extends PathfinderMob {
             world.sendParticles(ParticleTypes.ELECTRIC_SPARK, this.getX(), this.getY() + 0.5, this.getZ(), 14, 0.35, 0.35, 0.35, 0.08);
             world.playSound(null, this.blockPosition(), SoundEvents.AMETHYST_BLOCK_CHIME, SoundSource.NEUTRAL, 1.0f, 1.3f);
             String line = switch (stage) {
-                case 0 -> "Mmm, crunchy voltage for my circuits! Thank you, bestie!";
+                case 0 -> "Mmm, crunchy voltage for my circuits! Thank you, friend!";
                 case 1 -> "More conductivity for my processors! My signal feels stronger already!";
                 default -> "Feeding the machine... Yes. It grows faster now.";
             };

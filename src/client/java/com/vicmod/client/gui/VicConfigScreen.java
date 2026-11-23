@@ -182,7 +182,7 @@ public class VicConfigScreen extends Screen {
         this.testTtsButton = Button.builder(Component.literal("Test").withStyle(ChatFormatting.YELLOW), btn -> {
             applyTransientVoiceConfig();
             String sample = switch (this.testTtsStage) {
-                case 0 -> "Hiya bestie! I am Vic, your cheerful companion!";
+                case 0 -> "Hiya friend! I am Vic, your cheerful companion!";
                 case 1 -> "I am always watching over you, even while you sleep.";
                 case 2 -> "All the animals are gone. Time is running out.";
                 default -> "The shell is too tight. Do not hide on the surface.";
