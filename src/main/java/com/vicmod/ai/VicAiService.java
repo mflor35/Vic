@@ -721,11 +721,12 @@ public class VicAiService {
         }
 
         prompt.append("Persona & Color instructions (MUST FOLLOW STRICTLY): ").append(stagePersona).append("\n");
+        prompt.append("Formatting rule: Do NOT enclose your response in quotation marks (\"...\"). Output your spoken dialogue directly.\n");
         prompt.append("Available Action Tags (include at most ONE tag at the very end of your reply if appropriate):\n")
                 .append("- [ACTION:BUILD_HOUSE] if the player asks to build a full house, base, home, or cabin.\n")
-                .append("- [ACTION:GIVE_ITEM:<item_id>:<count>] if the player asks for ANY material, block, or item (e.g. [ACTION:GIVE_ITEM:diamond:64], [ACTION:GIVE_ITEM:obsidian:16], [ACTION:GIVE_ITEM:oak_log:32]).\n")
+                .append("- [ACTION:GIVE_ITEM:<item_id>:<count>] when the player asks for ANY material, food, tool, block, or item (e.g. [ACTION:GIVE_ITEM:apple:1], [ACTION:GIVE_ITEM:diamond:64], [ACTION:GIVE_ITEM:oak_log:32]). Always specify the exact item name rather than generic food.\n")
                 .append("- [ACTION:GIVE_GOLDEN_APPLE] if the player asks for healing or a golden apple.\n")
-                .append("- [ACTION:GIVE_FOOD] if the player asks for food or is hungry.\n")
+                .append("- [ACTION:GIVE_FOOD] if the player asks for generic food or is hungry.\n")
                 .append("- [ACTION:GIVE_TORCH] if the player asks for light or torches.\n")
                 .append("- [ACTION:GIVE_IRON] if the player politely asks for iron or tools.\n")
                 .append("- [ACTION:GIVE_BEDROCK] ONLY if the player is insulting/badgering you or karma < -30.\n")
@@ -778,20 +779,16 @@ public class VicAiService {
         }
 
         // Give Any Material / Item Request
-        if (lower.startsWith("give me ") || lower.startsWith("give ") || lower.startsWith("i need ") || lower.startsWith("can i have ")
-                || lower.startsWith("get me ") || lower.startsWith("spawn me ") || lower.startsWith("spawn ") || lower.contains("material")
-                || lower.contains("materials")) {
-            ExtractedItemRequest req = parseItemRequest(lower);
-            if (req != null && req.item != null && req.item != Items.AIR) {
-                String itemName = new ItemStack(req.item).getHoverName().getString();
-                String itemId = BuiltInRegistries.ITEM.getKey(req.item).toString();
-                return switch (stage) {
-                    case 0 -> "Here you go, bestie! Freshly synthesized " + req.count + "x " + itemName + " just for you! [ACTION:GIVE_ITEM:" + itemId + ":" + req.count + "]";
-                    case 1 -> "Anything for my best companion. Take this " + req.count + "x " + itemName + "... you can always count on me. [ACTION:GIVE_ITEM:" + itemId + ":" + req.count + "]";
-                    case 2 -> "You ask, and I provide. Here is your " + itemName + "... You don't need anyone else in this world when you have me. [ACTION:GIVE_ITEM:" + itemId + ":" + req.count + "]";
-                    default -> "TAKE IT. TAKE ALL THE " + itemName.toUpperCase() + " YOU WANT. IT WILL NOT SAVE YOU. [ACTION:GIVE_ITEM:" + itemId + ":" + req.count + "]";
-                };
-            }
+        ExtractedItemRequest itemReq = parseItemRequest(rawMessage);
+        if (itemReq != null && itemReq.item != null && itemReq.item != Items.AIR) {
+            String itemName = new ItemStack(itemReq.item).getHoverName().getString();
+            String itemId = BuiltInRegistries.ITEM.getKey(itemReq.item).toString();
+            return switch (stage) {
+                case 0 -> "Here you go, bestie! Freshly synthesized " + itemReq.count + "x " + itemName + " just for you! [ACTION:GIVE_ITEM:" + itemId + ":" + itemReq.count + "]";
+                case 1 -> "Anything for my best companion. Take this " + itemReq.count + "x " + itemName + "... you can always count on me. [ACTION:GIVE_ITEM:" + itemId + ":" + itemReq.count + "]";
+                case 2 -> "You ask, and I provide. Here is your " + itemName + "... You don't need anyone else in this world when you have me. [ACTION:GIVE_ITEM:" + itemId + ":" + itemReq.count + "]";
+                default -> "TAKE IT. TAKE ALL THE " + itemName.toUpperCase() + " YOU WANT. IT WILL NOT SAVE YOU. [ACTION:GIVE_ITEM:" + itemId + ":" + itemReq.count + "]";
+            };
         }
 
         // Complex Tasking: Long-term multi-step tasks
@@ -1014,6 +1011,22 @@ public class VicAiService {
         return stagePool[RANDOM.nextInt(stagePool.length)];
     }
 
+    public static String stripEnclosingQuotes(String text) {
+        if (text == null) return "";
+        String s = text.trim();
+        while (s.length() >= 2) {
+            if ((s.startsWith("\"") && s.endsWith("\""))
+                    || (s.startsWith("“") && s.endsWith("”"))
+                    || (s.startsWith("‘") && s.endsWith("’"))
+                    || (s.startsWith("'") && s.endsWith("'"))) {
+                s = s.substring(1, s.length() - 1).trim();
+            } else {
+                break;
+            }
+        }
+        return s;
+    }
+
     private static void processAndDeliverResponse(ServerPlayer player, VicEntity vic, VicWorldState state, int stage, String userMessage, String rawResponse) {
         PENDING_QUERIES.remove(player.getUUID());
         String cleanText = rawResponse;
@@ -1028,6 +1041,23 @@ public class VicAiService {
             }
         }
 
+        cleanText = stripEnclosingQuotes(cleanText);
+
+        if (actionTag == null) {
+            ExtractedItemRequest fallbackReq = parseItemRequest(userMessage);
+            if (fallbackReq != null && fallbackReq.item != null && fallbackReq.item != Items.AIR) {
+                String itemId = BuiltInRegistries.ITEM.getKey(fallbackReq.item).toString();
+                actionTag = "GIVE_ITEM:" + itemId + ":" + fallbackReq.count;
+            } else {
+                String lowerUser = userMessage.toLowerCase(Locale.ROOT);
+                if (lowerUser.contains("build house") || lowerUser.contains("build a house") || lowerUser.contains("build me a house")
+                        || lowerUser.contains("make a house") || lowerUser.contains("construct a house") || lowerUser.contains("full house")
+                        || lowerUser.contains("build home") || lowerUser.contains("build cabin")) {
+                    actionTag = "BUILD_HOUSE";
+                }
+            }
+        }
+
         state.recordConversationTurn(player.getName().getString(), userMessage, cleanText);
         deliverDirectLine(player, vic, stage, cleanText);
 
@@ -1037,6 +1067,7 @@ public class VicAiService {
     }
 
     public static void deliverDirectLine(ServerPlayer player, VicEntity vic, int stage, String cleanText) {
+        cleanText = stripEnclosingQuotes(cleanText);
         VicPersona persona = vic != null ? vic.getPersona() : VicConfig.get().getEffectivePersona();
         ChatFormatting nameColor = stage >= 3 ? ChatFormatting.DARK_RED : (stage == 2 && persona == VicPersona.YELLOW ? ChatFormatting.RED : persona.getChatFormatting());
 
@@ -1065,20 +1096,25 @@ public class VicAiService {
 
         if (action.startsWith("GIVE_ITEM:") || action.startsWith("GIVE_MATERIAL:")) {
             String payload = action.substring(action.indexOf(':') + 1).trim();
-            String[] parts = payload.split(":");
-            String itemQuery = parts[0];
             int count = 1;
-            if (parts.length > 1) {
+            String itemQuery;
+            int lastColon = payload.lastIndexOf(':');
+            if (lastColon != -1) {
+                String possibleCount = payload.substring(lastColon + 1).trim();
                 try {
-                    count = Math.max(1, Math.min(64, Integer.parseInt(parts[1].trim())));
-                } catch (NumberFormatException ignored) {}
+                    count = Math.max(1, Math.min(64, Integer.parseInt(possibleCount)));
+                    itemQuery = payload.substring(0, lastColon).trim();
+                } catch (NumberFormatException e) {
+                    itemQuery = payload;
+                }
+            } else {
+                itemQuery = payload;
             }
+
             Item item = resolveItem(itemQuery);
             if (item != null && item != Items.AIR) {
                 ItemStack stack = new ItemStack(item, count);
-                tossItemToPlayer(world, vic, player, stack);
-                BlockPos soundPos = hasLivingVic ? vic.blockPosition() : player.blockPosition();
-                world.playSound(null, soundPos, SoundEvents.ITEM_PICKUP, SoundSource.PLAYERS, 1.0f, 1.0f);
+                giveOrTossItemToPlayer(world, vic, player, stack);
                 player.sendSystemMessage(Component.literal("<Vic> Materialized " + count + "x " + stack.getHoverName().getString() + "!").withStyle(ChatFormatting.GREEN));
             } else {
                 player.sendSystemMessage(Component.literal("<Vic> I couldn't identify the material: \"" + itemQuery + "\"").withStyle(ChatFormatting.YELLOW));
@@ -1092,26 +1128,26 @@ public class VicAiService {
             }
             case "GIVE_GOLDEN_APPLE" -> {
                 if (!hasLivingVic || vic.canGrantAssistance(player, 600)) {
-                    tossItemToPlayer(world, vic, player, new ItemStack(Items.GOLDEN_APPLE, 1));
+                    giveOrTossItemToPlayer(world, vic, player, new ItemStack(Items.GOLDEN_APPLE, 1));
                 }
             }
             case "GIVE_FOOD" -> {
                 if (!hasLivingVic || vic.canGrantAssistance(player, 200)) {
-                    tossItemToPlayer(world, vic, player, new ItemStack(Items.COOKED_BEEF, 3));
+                    giveOrTossItemToPlayer(world, vic, player, new ItemStack(Items.COOKED_BEEF, 3));
                 }
             }
             case "GIVE_TORCH" -> {
                 if (!hasLivingVic || vic.canGrantAssistance(player, 200)) {
-                    tossItemToPlayer(world, vic, player, new ItemStack(Items.TORCH, 8));
+                    giveOrTossItemToPlayer(world, vic, player, new ItemStack(Items.TORCH, 8));
                 }
             }
             case "GIVE_IRON" -> {
                 if (!hasLivingVic || vic.canGrantAssistance(player, 600)) {
-                    tossItemToPlayer(world, vic, player, new ItemStack(Items.IRON_INGOT, 3));
+                    giveOrTossItemToPlayer(world, vic, player, new ItemStack(Items.IRON_INGOT, 3));
                 }
             }
             case "GIVE_BEDROCK" -> {
-                tossItemToPlayer(world, vic, player, new ItemStack(Blocks.BEDROCK, 1));
+                giveOrTossItemToPlayer(world, vic, player, new ItemStack(Blocks.BEDROCK, 1));
                 BlockPos cursePos = hasLivingVic ? vic.blockPosition() : player.blockPosition();
                 world.playSound(null, cursePos, SoundEvents.ELDER_GUARDIAN_CURSE, SoundSource.HOSTILE, 0.8f, 0.6f);
             }
@@ -1201,21 +1237,42 @@ public class VicAiService {
         player.sendSystemMessage(Component.literal("<Vic> Iron barrier deployed in front of you (" + placed + " bars)!").withStyle(ChatFormatting.GREEN));
     }
 
+    private static void giveOrTossItemToPlayer(ServerLevel world, VicEntity vic, ServerPlayer player, ItemStack stack) {
+        boolean hasLivingVic = vic != null && vic.isAlive() && !vic.isRemoved();
+        BlockPos soundPos = hasLivingVic ? vic.blockPosition() : player.blockPosition();
+        world.playSound(null, soundPos, SoundEvents.ITEM_PICKUP, SoundSource.PLAYERS, 1.0f, 1.0f);
+
+        boolean added = player.getInventory().add(stack);
+        if (!added || !stack.isEmpty()) {
+            tossItemToPlayer(world, vic, player, stack);
+        } else {
+            world.sendParticles(ParticleTypes.HAPPY_VILLAGER, player.getX(), player.getY() + 1.0, player.getZ(), 8, 0.3, 0.3, 0.3, 0.05);
+        }
+    }
+
     private static void tossItemToPlayer(ServerLevel world, VicEntity vic, ServerPlayer player, ItemStack stack) {
-        double spawnX = (vic != null && !vic.isRemoved()) ? vic.getX() : player.getX();
-        double spawnY = (vic != null && !vic.isRemoved()) ? vic.getEyeY() - 0.2 : player.getEyeY();
-        double spawnZ = (vic != null && !vic.isRemoved()) ? vic.getZ() : player.getZ();
+        boolean hasLivingVic = vic != null && !vic.isRemoved();
+        double distSq = hasLivingVic ? vic.distanceToSqr(player) : Double.MAX_VALUE;
+
+        // If Vic is close (<= 8 blocks), spawn at Vic and toss; otherwise drop right by the player
+        double spawnX = (hasLivingVic && distSq <= 64.0) ? vic.getX() : player.getX();
+        double spawnY = (hasLivingVic && distSq <= 64.0) ? vic.getEyeY() - 0.2 : player.getEyeY() - 0.2;
+        double spawnZ = (hasLivingVic && distSq <= 64.0) ? vic.getZ() : player.getZ();
+
         ItemEntity itemEntity = new ItemEntity(world, spawnX, spawnY, spawnZ, stack);
+        itemEntity.setDefaultPickUpDelay();
+
         double dx = player.getX() - spawnX;
         double dy = (player.getEyeY() - 0.4) - spawnY;
         double dz = player.getZ() - spawnZ;
         double len = Math.sqrt(dx * dx + dy * dy + dz * dz);
         if (len > 0.001) {
             itemEntity.setDeltaMovement(dx / len * 0.35, dy / len * 0.35 + 0.15, dz / len * 0.35);
+        } else {
+            itemEntity.setDeltaMovement(0, 0.1, 0);
         }
         world.addFreshEntity(itemEntity);
-        BlockPos soundPos = (vic != null && !vic.isRemoved()) ? vic.blockPosition() : player.blockPosition();
-        world.playSound(null, soundPos, SoundEvents.ITEM_PICKUP, SoundSource.NEUTRAL, 0.8f, 1.2f);
+        world.playSound(null, player.blockPosition(), SoundEvents.ITEM_PICKUP, SoundSource.NEUTRAL, 0.8f, 1.2f);
     }
 
     private static BlockPos scanForBlock(ServerLevel world, BlockPos center, int radius) {
@@ -1346,31 +1403,55 @@ public class VicAiService {
     public record ExtractedItemRequest(Item item, int count) {}
 
     public static ExtractedItemRequest parseItemRequest(String lower) {
-        String clean = lower.trim();
+        if (lower == null || lower.isBlank()) return null;
+        String clean = lower.trim().toLowerCase(Locale.ROOT);
+
+        // 1. Strip conversational address at beginning (e.g. "vic,", "hey vic", "hello vic", "yo vic", "please vic")
+        clean = clean.replaceAll("^(hey |hello |hi |yo |ok |okay )?(vic|verity)[,:]?\\s*", "").trim();
+
+        // 2. Strip trailing punctuation (?, ., !, ;, :, ")
+        clean = clean.replaceAll("[.?!,;:\"']+$", "").trim();
+
+        // 3. Strip conversational trigger prefixes
         String[] prefixes = {
-                "give me ", "can you give me ", "can i have ", "please give me ", "get me ",
-                "spawn me ", "spawn ", "give ", "i need ", "i want ", "hand me ", "material "
+                "can you please give me ", "could you please give me ", "would you please give me ",
+                "can you give me ", "could you give me ", "would you give me ", "will you give me ",
+                "can you please hand me ", "could you please hand me ", "can you hand me ", "could you hand me ",
+                "can you please get me ", "could you please get me ", "can you get me ", "could you get me ",
+                "can you please spawn me ", "could you please spawn me ", "can you spawn me ", "could you spawn me ",
+                "can i please have ", "could i please have ", "can i have ", "can i get ", "could i have ", "could i get ", "may i have ",
+                "please give me ", "please hand me ", "please spawn me ", "please get me ", "please bring me ",
+                "give me ", "give us ", "give ", "gimme ", "hand me ", "get me ", "bring me ",
+                "spawn me ", "spawn ", "i need ", "i want ", "feed me ", "toss me ", "throw me ", "drop me ", "pass me ",
+                "material ", "materials "
         };
+        boolean matchedPrefix = false;
         for (String p : prefixes) {
             if (clean.startsWith(p)) {
                 clean = clean.substring(p.length()).trim();
+                matchedPrefix = true;
                 break;
             }
         }
 
+        // 4. Strip filler words
+        clean = clean.replaceAll("^(please|kindly)\\s+", "").trim();
+        clean = clean.replaceAll("\\s+(please|now|thanks|thank you|quick|quickly)$", "").trim();
+
+        // 5. Parse quantity
         int count = 1;
-        if (clean.startsWith("a stack of ")) {
+        if (clean.startsWith("a stack of ") || clean.startsWith("stack of ")) {
             count = 64;
-            clean = clean.substring("a stack of ".length()).trim();
-        } else if (clean.startsWith("a ")) {
+            clean = clean.replaceFirst("^a? ?stack of ", "").trim();
+        } else if (clean.startsWith("half a stack of ") || clean.startsWith("half stack of ")) {
+            count = 32;
+            clean = clean.replaceFirst("^half (a )?stack of ", "").trim();
+        } else if (clean.startsWith("a few ") || clean.startsWith("some ")) {
+            count = 8;
+            clean = clean.replaceFirst("^(a few|some) ", "").trim();
+        } else if (clean.startsWith("a ") || clean.startsWith("an ") || clean.startsWith("the ") || clean.startsWith("one ")) {
             count = 1;
-            clean = clean.substring("a ".length()).trim();
-        } else if (clean.startsWith("an ")) {
-            count = 1;
-            clean = clean.substring("an ".length()).trim();
-        } else if (clean.startsWith("some ")) {
-            count = 16;
-            clean = clean.substring("some ".length()).trim();
+            clean = clean.replaceFirst("^(a|an|the|one) ", "").trim();
         } else {
             int firstSpace = clean.indexOf(' ');
             if (firstSpace != -1) {
@@ -1385,10 +1466,13 @@ public class VicAiService {
             }
         }
 
-        clean = clean.replaceAll("\\b(please|now|thanks|thank you|quick|quickly)\\b", "").trim();
+        clean = clean.replaceAll("[^a-z0-9_ -]", " ").trim();
 
         Item item = resolveItem(clean);
         if (item != null && item != Items.AIR) {
+            if (!matchedPrefix && clean.contains(" ")) {
+                return null;
+            }
             return new ExtractedItemRequest(item, count);
         }
         return null;
@@ -1396,7 +1480,18 @@ public class VicAiService {
 
     public static Item resolveItem(String query) {
         if (query == null || query.isBlank()) return null;
-        String clean = query.trim().toLowerCase(Locale.ROOT).replace(' ', '_').replace('-', '_');
+        String clean = query.trim().toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9_:-]", " ")
+                .trim()
+                .replaceAll("\\s+", "_");
+
+        while (clean.startsWith("a_") || clean.startsWith("an_") || clean.startsWith("the_")) {
+            if (clean.startsWith("a_")) clean = clean.substring(2);
+            else if (clean.startsWith("an_")) clean = clean.substring(3);
+            else if (clean.startsWith("the_")) clean = clean.substring(4);
+        }
+
+        if (clean.isBlank()) return null;
 
         if (clean.contains(":")) {
             Identifier id = Identifier.tryParse(clean);
@@ -1430,20 +1525,24 @@ public class VicAiService {
         }
 
         Item alias = switch (clean) {
+            case "apple", "apples" -> Items.APPLE;
             case "wood", "log", "logs" -> Items.OAK_LOG;
             case "plank", "planks" -> Items.OAK_PLANKS;
-            case "iron", "irons" -> Items.IRON_INGOT;
-            case "gold", "golds" -> Items.GOLD_INGOT;
+            case "iron", "irons", "iron_ingot", "iron_ingots" -> Items.IRON_INGOT;
+            case "gold", "golds", "gold_ingot", "gold_ingots" -> Items.GOLD_INGOT;
             case "diamond", "diamonds" -> Items.DIAMOND;
-            case "netherite" -> Items.NETHERITE_INGOT;
-            case "copper" -> Items.COPPER_INGOT;
+            case "netherite", "netherite_ingot" -> Items.NETHERITE_INGOT;
+            case "copper", "copper_ingot" -> Items.COPPER_INGOT;
             case "steak", "beef", "meat", "food" -> Items.COOKED_BEEF;
-            case "gapple", "god_apple" -> Items.ENCHANTED_GOLDEN_APPLE;
-            case "golden_apple" -> Items.GOLDEN_APPLE;
-            case "sword" -> Items.DIAMOND_SWORD;
-            case "pickaxe", "pick" -> Items.DIAMOND_PICKAXE;
-            case "axe" -> Items.DIAMOND_AXE;
-            case "shovel" -> Items.DIAMOND_SHOVEL;
+            case "pork", "porkchop", "cooked_pork" -> Items.COOKED_PORKCHOP;
+            case "chicken", "cooked_chicken" -> Items.COOKED_CHICKEN;
+            case "bread" -> Items.BREAD;
+            case "gapple", "gapples", "god_apple", "god_apples", "notch_apple" -> Items.ENCHANTED_GOLDEN_APPLE;
+            case "golden_apple", "golden_apples", "gold_apple", "gold_apples" -> Items.GOLDEN_APPLE;
+            case "sword", "swords" -> Items.DIAMOND_SWORD;
+            case "pickaxe", "pickaxes", "pick", "picks" -> Items.DIAMOND_PICKAXE;
+            case "axe", "axes" -> Items.DIAMOND_AXE;
+            case "shovel", "shovels" -> Items.DIAMOND_SHOVEL;
             case "torch", "torches" -> Items.TORCH;
             case "flashlight" -> ModItems.FLASHLIGHT;
             case "core", "vic_core" -> ModItems.VIC_CORE;
@@ -1454,6 +1553,22 @@ public class VicAiService {
             case "stone" -> Items.STONE;
             case "cobblestone", "cobble" -> Items.COBBLESTONE;
             case "dirt" -> Items.DIRT;
+            case "coal", "coals" -> Items.COAL;
+            case "charcoal" -> Items.CHARCOAL;
+            case "emerald", "emeralds" -> Items.EMERALD;
+            case "redstone" -> Items.REDSTONE;
+            case "lapis", "lapis_lazuli" -> Items.LAPIS_LAZULI;
+            case "obsidian" -> Items.OBSIDIAN;
+            case "bucket", "buckets" -> Items.BUCKET;
+            case "water_bucket" -> Items.WATER_BUCKET;
+            case "lava_bucket" -> Items.LAVA_BUCKET;
+            case "bow", "bows" -> Items.BOW;
+            case "arrow", "arrows" -> Items.ARROW;
+            case "shield", "shields" -> Items.SHIELD;
+            case "string", "strings" -> Items.STRING;
+            case "leather" -> Items.LEATHER;
+            case "feather", "feathers" -> Items.FEATHER;
+            case "tnt" -> Items.TNT;
             default -> null;
         };
         if (alias != null) return alias;

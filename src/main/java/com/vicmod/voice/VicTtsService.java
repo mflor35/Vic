@@ -122,7 +122,7 @@ public class VicTtsService {
     private static String sanitizeForSpeech(String text) {
         return text
                 .replaceAll("\\[ACTION:[^\\]]*\\]", "")
-                .replaceAll("[*_~`<>]", "")
+                .replaceAll("[\"“”'‘’*_~`<>]", "")
                 .trim();
     }
 
